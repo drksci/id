@@ -7,7 +7,7 @@
  * always bound parameters.
  */
 
-import { SCHEMA, STATUS } from "./runtime.js";
+import { FEEDBACK_STATUS, ONBOARDING_STATUS, SCHEMA, SERVICE_VERIFICATION, STATUS } from "./runtime.js";
 
 const TABLE = Object.freeze({
   REQUESTS: "access_requests",
@@ -18,6 +18,11 @@ const TABLE = Object.freeze({
   REVOKED: "revoked_grants",
   APPROVERS: "approvers",
   DELIVERIES: "webhook_deliveries",
+  FEEDBACK: "feedback",
+  OUTBOX: "feedback_outbox",
+  ONBOARDING: "onboarding_requests",
+  SERVICES: "service_catalog",
+  SUGGESTIONS: "feedback_suggestions",
 });
 
 function unavailable() { throw new Error("D1 binding unavailable"); }
@@ -64,6 +69,21 @@ function grantRow(row) {
     issued_by: row.issued_by,
     request_id: row.request_id,
   };
+}
+
+function feedbackRow(row) {
+  if (!row) return null;
+  return { schema: SCHEMA.FEEDBACK, feedback_id: row.feedback_id, actor_subject_hash: row.actor_subject_hash, actor_kind: row.actor_kind, correlation_id: row.correlation_id, prompt_id: row.prompt_id, workspace: row.workspace, environment: row.environment, resource: row.resource, event: row.event, action: row.action, context: parseJson(row.context_json, undefined), expected_outcome: row.expected_outcome, observed_result: row.observed_result, reproduction_steps: row.reproduction_steps, severity: row.severity, message: row.message, metadata: parseJson(row.metadata_json, {}), created_at: row.created_at, updated_at: row.updated_at, status: row.status, idempotency_key: row.idempotency_key };
+}
+
+function onboardingRow(row) {
+  if (!row) return null;
+  return { schema: SCHEMA.ONBOARDING, request_id: row.request_id, actor_subject_hash: row.actor_subject_hash, actor_kind: row.actor_kind, provider: row.provider, target: row.target, repository_remote: row.repository_remote || undefined, workspace: row.workspace, environment: row.environment, resource: row.resource, scopes: parseJson(row.scopes_json), intent: row.intent || undefined, challenge: parseJson(row.challenge_json, null), status: row.status, created_at: row.created_at, updated_at: row.updated_at, expires_at: row.expires_at, idempotency_key: row.idempotency_key };
+}
+
+function serviceRow(row) {
+  if (!row) return null;
+  return { service_id: row.service_id, actor_subject_hash: row.actor_subject_hash, canonical_name: row.canonical_name, service_type: row.service_type, provider: row.provider, endpoint: row.endpoint, workspace: row.workspace, parent_workspace: row.parent_workspace || undefined, environment: row.environment, resource: row.resource, capabilities: parseJson(row.capabilities_json), verification_state: row.verification_state, challenge: parseJson(row.challenge_json, null), last_seen: row.last_seen || undefined, metadata: parseJson(row.metadata_json, {}), expires_at: row.expires_at, created_at: row.created_at, updated_at: row.updated_at, idempotency_key: row.idempotency_key };
 }
 
 export class D1Store {
@@ -175,6 +195,54 @@ export class D1Store {
     ).run();
     return Number(result?.meta?.changes || 0) === 1;
   }
+
+  async createFeedbackWithIdempotency(record, response) {
+    if (!this.db || typeof this.db.batch !== "function") unavailable();
+    await this.db.batch([
+      this.prepare(`INSERT INTO ${TABLE.FEEDBACK} (feedback_id, actor_subject_hash, actor_kind, correlation_id, prompt_id, workspace, environment, resource, event, action, context_json, expected_outcome, observed_result, reproduction_steps, severity, message, metadata_json, created_at, updated_at, status, idempotency_key) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, record.feedback_id, record.actor_subject_hash, record.actor_kind, record.correlation_id, record.prompt_id, record.workspace, record.environment, record.resource, record.event, record.action, record.context ? JSON.stringify(record.context) : null, record.expected_outcome, record.observed_result, record.reproduction_steps, record.severity, record.message, JSON.stringify(record.metadata), record.created_at, record.updated_at, record.status, record.idempotency_key),
+      this.prepare(`INSERT INTO ${TABLE.OUTBOX} (outbox_id, feedback_id, payload_json, status, created_at) VALUES (?, ?, ?, ?, ?)`, record.feedback_id, record.feedback_id, JSON.stringify({ feedback_id: record.feedback_id, schema: SCHEMA.FEEDBACK, message: record.message, metadata: record.metadata }), "pending", record.created_at),
+      this.prepare(`INSERT INTO ${TABLE.IDEMPOTENCY} (actor_id, idempotency_key, response_json, created_at) VALUES (?, ?, ?, ?)`, record.actor_subject_hash, record.idempotency_key, JSON.stringify(response), record.created_at),
+    ]);
+  }
+
+  async getFeedback(feedbackId) {
+    return feedbackRow(await this.prepare(`SELECT * FROM ${TABLE.FEEDBACK} WHERE feedback_id = ?`, feedbackId).first());
+  }
+
+  async createFeedbackSuggestion(record) {
+    await this.prepare(`INSERT OR REPLACE INTO ${TABLE.SUGGESTIONS} (feedback_id, correlation_id, result_json, created_at) VALUES (?, ?, ?, ?)`, record.feedback_id, record.correlation_id, JSON.stringify(record), record.generated_at).run();
+  }
+
+  async getFeedbackSuggestions(feedbackId) {
+    const row = await this.prepare(`SELECT result_json FROM ${TABLE.SUGGESTIONS} WHERE feedback_id = ?`, feedbackId).first();
+    return row ? parseJson(row.result_json, null) : null;
+  }
+
+  async createOnboardingWithIdempotency(record, response) {
+    if (!this.db || typeof this.db.batch !== "function") unavailable();
+    await this.db.batch([
+      this.prepare(`INSERT INTO ${TABLE.ONBOARDING} (request_id, actor_subject_hash, actor_kind, provider, target, repository_remote, workspace, environment, resource, scopes_json, intent, challenge_json, status, created_at, updated_at, expires_at, idempotency_key) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, record.request_id, record.actor_subject_hash, record.actor_kind, record.provider, record.target, record.repository_remote || null, record.workspace, record.environment, record.resource, JSON.stringify(record.scopes), record.intent || null, JSON.stringify(record.challenge), record.status, record.created_at, record.updated_at, record.expires_at, record.idempotency_key),
+      this.prepare(`INSERT INTO ${TABLE.IDEMPOTENCY} (actor_id, idempotency_key, response_json, created_at) VALUES (?, ?, ?, ?)`, record.actor_subject_hash, record.idempotency_key, JSON.stringify(response), record.created_at),
+    ]);
+  }
+
+  async getOnboarding(requestId) { return onboardingRow(await this.prepare(`SELECT * FROM ${TABLE.ONBOARDING} WHERE request_id = ?`, requestId).first()); }
+
+  async createOnboarding(record) { await this.prepare(`INSERT INTO ${TABLE.ONBOARDING} (request_id, actor_subject_hash, actor_kind, provider, target, repository_remote, workspace, environment, resource, scopes_json, intent, challenge_json, status, created_at, updated_at, expires_at, idempotency_key) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, record.request_id, record.actor_subject_hash, record.actor_kind, record.provider, record.target, record.repository_remote || null, record.workspace, record.environment, record.resource, JSON.stringify(record.scopes), record.intent || null, JSON.stringify(record.challenge), record.status, record.created_at, record.updated_at, record.expires_at, record.idempotency_key).run(); }
+
+  async transitionOnboarding(requestId, expectedStatus, update) { if (!Object.values(ONBOARDING_STATUS).includes(update.status)) return false; const result = await this.prepare(`UPDATE ${TABLE.ONBOARDING} SET status = ?, updated_at = ? WHERE request_id = ? AND status = ?`, update.status, update.updated_at || new Date().toISOString(), requestId, expectedStatus).run(); return Number(result?.meta?.changes || 0) === 1; }
+
+  async createServiceWithIdempotency(record, response) {
+    if (!this.db || typeof this.db.batch !== "function") unavailable();
+    await this.db.batch([
+      this.prepare(`INSERT INTO ${TABLE.SERVICES} (service_id, actor_subject_hash, canonical_name, service_type, provider, endpoint, workspace, parent_workspace, environment, resource, capabilities_json, verification_state, challenge_json, last_seen, metadata_json, expires_at, created_at, updated_at, idempotency_key) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, record.service_id, record.actor_subject_hash, record.canonical_name, record.service_type, record.provider, record.endpoint, record.workspace, record.parent_workspace || null, record.environment, record.resource, JSON.stringify(record.capabilities), record.verification_state, JSON.stringify(record.challenge), record.last_seen || null, JSON.stringify(record.metadata), record.expires_at, record.created_at, record.updated_at, record.idempotency_key),
+      this.prepare(`INSERT INTO ${TABLE.IDEMPOTENCY} (actor_id, idempotency_key, response_json, created_at) VALUES (?, ?, ?, ?)`, record.actor_subject_hash, record.idempotency_key, JSON.stringify(response), record.created_at),
+    ]);
+  }
+
+  async getService(serviceId) { return serviceRow(await this.prepare(`SELECT * FROM ${TABLE.SERVICES} WHERE service_id = ?`, serviceId).first()); }
+  async createService(record) { await this.prepare(`INSERT INTO ${TABLE.SERVICES} (service_id, actor_subject_hash, canonical_name, service_type, provider, endpoint, workspace, parent_workspace, environment, resource, capabilities_json, verification_state, challenge_json, last_seen, metadata_json, expires_at, created_at, updated_at, idempotency_key) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, record.service_id, record.actor_subject_hash, record.canonical_name, record.service_type, record.provider, record.endpoint, record.workspace, record.parent_workspace || null, record.environment, record.resource, JSON.stringify(record.capabilities), record.verification_state, JSON.stringify(record.challenge), record.last_seen || null, JSON.stringify(record.metadata), record.expires_at, record.created_at, record.updated_at, record.idempotency_key).run(); }
+  async listServices(workspace) { const result = await this.prepare(`SELECT * FROM ${TABLE.SERVICES} WHERE workspace = ? ORDER BY created_at DESC`, workspace).all(); return (result?.results || []).map(serviceRow); }
 
   async getActiveGrant(subjectId, resource, environment, now) {
     const row = await this.prepare(
