@@ -94,6 +94,7 @@ export const ONBOARDING_STATUS = Object.freeze({ PENDING: "pending", VERIFIED: "
 export const ONBOARDING_PROVIDER = Object.freeze({ GITHUB_APP: "github_app", CLOUDFLARE_DOMAIN: "cloudflare_domain", SERVICE_INTEGRATION: "service_integration" });
 export const SERVICE_VERIFICATION = Object.freeze({ PENDING: "pending", VERIFIED: "verified", DENIED: "denied" });
 export const SERVICE_CATALOG_STATUS = Object.freeze({ ACTIVE: "active", EXPIRED: "expired" });
+export const SERVICE_PROVIDER = Object.freeze({ GITHUB: "github", GITLAB: "gitlab", BITBUCKET: "bitbucket", CLOUDFLARE: "cloudflare" });
 const SERVICE_CATALOG_ENABLED = "SERVICE_CATALOG_ENABLED";
 const FEEDBACK_SEVERITIES = new Set(Object.values(FEEDBACK_SEVERITY));
 const ONBOARDING_PROVIDERS = new Set(Object.values(ONBOARDING_PROVIDER));
@@ -104,6 +105,7 @@ const FEEDBACK_MAX_METADATA_BYTES = 8192;
 const FEEDBACK_ENABLED = "FEEDBACK_ENABLED";
 const ONBOARDING_MAX_INTENT = 2048;
 const ONBOARDING_MAX_TARGET = 512;
+const SERVICE_PROVIDERS = new Set(Object.values(SERVICE_PROVIDER));
 
 function serviceFeatureEnabled(env = {}) {
   const value = env[SERVICE_CATALOG_ENABLED];
@@ -143,6 +145,7 @@ export async function registerService({ subject, service, store, policy, env = {
   const canonicalName = boundedText(body.canonical_name, "canonical_name");
   const serviceType = boundedText(body.service_type, "service_type");
   const provider = boundedText(body.provider, "provider");
+  if (!SERVICE_PROVIDERS.has(provider)) fail("invalid_service", "provider is not allowed", 400);
   let endpoint;
   try { endpoint = new URL(boundedText(body.endpoint, "endpoint")); } catch { fail("invalid_service", "endpoint must be a valid URL", 400); }
   if (endpoint.protocol !== "https:") fail("invalid_service", "endpoint must use HTTPS", 400);
@@ -364,11 +367,12 @@ export async function getOnboardingRequest({ requestId, subject, store, policy, 
     if (!allowed && typeof store.isApprover === "function") allowed = await store.isApprover(actor.sub, record.workspace);
   }
   if (!allowed) fail("forbidden", "onboarding request is not visible to this subject", 403);
-  if (record.status === ONBOARDING_STATUS.PENDING && Date.parse(record.expires_at) <= now.getTime()) {
+  let status = record.status;
+  if (status === ONBOARDING_STATUS.PENDING && Date.parse(record.expires_at) <= now.getTime()) {
     if (typeof store.transitionOnboarding === "function") await store.transitionOnboarding(record.request_id, ONBOARDING_STATUS.PENDING, { status: ONBOARDING_STATUS.EXPIRED, updated_at: new Date(now).toISOString() });
-    record.status = ONBOARDING_STATUS.EXPIRED;
+    status = ONBOARDING_STATUS.EXPIRED;
   }
-  return { ...record, challenge: record.challenge, repository_remote: record.repository_remote };
+  return { ...record, status, challenge: record.challenge, repository_remote: record.repository_remote };
 }
 
 export async function submitFeedback({ subject, feedback, store, policy, env = {}, now = new Date(), randomId } = {}) {
