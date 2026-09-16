@@ -192,6 +192,8 @@ test("Access JWT verification enforces issuer, audience, expiry, kid and signatu
   const tampered = `${tokenParts[0]}.${tamperedPayload}.${tokenParts[2]}`;
   await assert.rejects(() => verifyAccessJwt(new Request(request.url, { headers: { authorization: `Bearer ${tampered}` } }), env, { fetcher }), (error) => error.code === "invalid_token");
   await assert.rejects(() => verifyAccessJwt(new Request(request.url, { headers: { authorization: `Bearer ${token}` } }), { ...env, ACCESS_AUDIENCE: "other" }, { fetcher }), (error) => error.code === "wrong_audience");
+  const expired = await signedJwt(pair.privateKey, { ...payload, exp: Math.floor(Date.now() / 1000) - 120 });
+  await assert.rejects(() => verifyAccessJwt(new Request(request.url, { headers: { authorization: `Bearer ${expired}` } }), env, { fetcher }), (error) => error.code === "subject_expired");
 });
 
 test("MCP protocol supports initialize, tools/list and tools/call", async () => {
