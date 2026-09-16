@@ -44,7 +44,15 @@
     "approval_required_before_provider_permissions": true,
     "return_url_policy": "same_origin_path_only",
     "oauth_flow": "server_issued_state_and_pkce; reuse_existing_approved_github_session_when_available",
-    "local_git_credentials": "never_read_or_uploaded_as_bearer_secrets"
+    "local_git_credentials": "never_read_or_uploaded_as_bearer_secrets",
+    "provider_actions": {
+      "repository_setup": "https://github.com/drksci/id",
+      "github_app_installation": "https://github.com/apps/drksci-id-worker/installations/new",
+      "cloudflare_dashboard": "https://dash.cloudflare.com/",
+      "deploy_workflow": "https://github.com/drksci/id/actions/workflows/deploy-id-worker.yml",
+      "approval_required": true
+    },
+    "required_deployment_inputs": ["CLOUDFLARE_ACCOUNT_ID", "CLOUDFLARE_API_TOKEN", "D1_DATABASE_ID_*", "FEEDBACK_ENABLED", "ASSISTANT_ENABLED"]
   },
   "catalog": {
     "page": "/catalog/",

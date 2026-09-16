@@ -91,6 +91,12 @@ same-origin path return URLs. Local git credential helpers are never read or upl
 secrets. A pending catalog record is non-authoritative until repository, parent workspace,
 environment, and DNS evidence are verified; only then issue a bounded grant.
 
+Use `/assist/` only as a feedback analyst: it can show recurring friction, suggested recipes or
+rules, confidence, and evidence. `ASSISTANT_ENABLED` and optional Cloudflare Workers AI binding
+`AI` are deployment inputs; a deterministic fallback is acceptable. The assistant cannot grant,
+apply, or mutate policy. Review Apply or Ignore explicitly, then perform any application as a
+separate authorized action.
+
 KISS checks: aliases are routing, not auth; register exact workspaces/domains;
 prevent alias recycling and reserve subdomains; make approval links single-use
 because scanners may consume them; detect parent cycles; allow for clock skew

@@ -56,6 +56,19 @@ when available, and accept only same-origin path return URLs. Local git credenti
 read or uploaded as bearer secrets. After verification, issue only a bounded grant for the verified
 repository, full canonical workspace chain, declared actions, and explicit environment.
 
+The optional `/assist/` page is a feedback analyst. It shows recurring friction, a suggested
+recipe or rule, confidence, and evidence, then requires explicit review with Apply or Ignore.
+Apply does not mutate policy here and remains a separate authorized action. `ASSISTANT_ENABLED`
+controls the page; an optional Cloudflare Workers AI binding named `AI` may provide analysis, with a
+deterministic local fallback when unavailable. The assistant must never grant access or apply a
+rule autonomously.
+
+After explicit approval, provider actions may open the configured GitHub repository setup,
+`drksci-id-worker` App installation, Cloudflare dashboard, or deploy workflow. The deployment still
+requires `CLOUDFLARE_ACCOUNT_ID`, `CLOUDFLARE_API_TOKEN`, environment-specific D1 IDs, and the
+runtime secrets documented by the infra contract. Wrangler remains the fallback. Provider links
+open only after the approval card, and return URLs are same-origin paths only.
+
 ## Client setup
 
 Coding agents should read repository-local `AGENTS.md`, `CLAUDE.md`, and Cursor

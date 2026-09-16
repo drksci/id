@@ -110,9 +110,22 @@ The `/onboarding/` page is a first-touch guide for GitHub App installation, Clou
 application/domain authorization, and DNS CNAME/TXT verification. It may display service URL and
 repository hints, but a single explicit approval is required before any provider permission opens.
 The server-side start flow owns state and PKCE, reuses an existing approved GitHub session when
-available, and accepts same-origin path return URLs only. The `/catalog/` page describes service
+available, and accepts same-origin path return URLs only. Approved provider actions may open the
+`drksci/id` repository setup, the `drksci-id-worker` App installation, the Cloudflare dashboard,
+or the deploy workflow; Wrangler remains the fallback. The `/catalog/` page describes service
 types, capabilities, parent-child workspace bindings, and `verified`, `pending`, `unverified`, or
 `disabled` states. Pending onboarding is descriptive and never grants access.
+
+The optional `/assist/` page is a feedback analyst with deterministic fallback suggestions and an
+optional Cloudflare Workers AI binding named `AI`. `ASSISTANT_ENABLED` is explicit in each Wrangler
+environment. It reports recurring friction with confidence and evidence, but cannot grant access,
+apply a rule, or mutate policy; applying any rule remains a separate authorized action.
+
+The public shell is installable through `manifest.webmanifest` and `sw.js`. The service worker
+caches the static discovery shell and hands an already-sanitized feedback POST to an offline outbox;
+it never receives provider credentials. Browsers without an install prompt get the browser-menu
+fallback. Keep the shell cache versioned when static contracts change and verify that an offline
+feedback retry preserves its correlation ID without persisting secrets.
 
 ## Deployment commands
 

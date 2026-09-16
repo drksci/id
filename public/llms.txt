@@ -9,6 +9,7 @@ Start here:
 - Service catalog: /catalog/
 - First-touch onboarding: /onboarding/
 - Feedback form: /feedback/
+- Policy assistant: /assist/
 - Full instructions: /llms-full.txt
 - Machine discovery: /.well-known/agent-access.json
 
@@ -54,3 +55,10 @@ session when available, and accepts only same-origin path return URLs. Local git
 are never read or uploaded as bearer secrets. A pending catalog record is non-authoritative until
 repository, parent workspace, environment, and DNS evidence are verified; only then may a bounded
 grant be issued.
+
+## Policy assistant
+
+The optional `/assist/` page is a feedback analyst. It suggests recipes or rules with confidence
+and evidence, using an optional Cloudflare Workers AI binding named `AI` or a deterministic local
+fallback. `ASSISTANT_ENABLED` controls availability. Suggestions cannot grant access, mutate
+policy, or apply a rule; applying any rule remains a separate authorized action.
