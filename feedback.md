@@ -1,39 +1,71 @@
-# Feedback mirror and outbox contract
+# Feedback endpoint
 
 Could this run smoother? What were you trying to do?
 
-This file defines the sanitized append format for `POST /api/v1/feedback`. It is a durable mirror
-and outbox contract, not a place for credentials or raw request bodies. The deployment-owned
-`FEEDBACK_ENABLED` flag controls whether the endpoint accepts new records.
+This file documents `POST /api/v1/feedback` as it is implemented. It is an endpoint contract and a
+place to record what is *not* built, so the next reader is not misled by machinery that does not
+exist. Credentials and raw request bodies never belong here.
 
-## Sanitized record
+## Record
 
-Append one JSON object per line (or the equivalent structured row in `id-data`) with these fields:
+The endpoint accepts one JSON object. These fields are required and are rejected with
+`invalid_feedback` (400) when absent — see `src/runtime.js`, `submitFeedback`:
 
-```json
-{"correlation_id":"uuid","received_at":"2026-09-17T00:00:00Z","action":"onboarding","expected_outcome":"provider setup opens","observed_result":"setup stopped","message":"short description","reproduction_steps":"1. Open onboarding 2. Review context","page_path":"/onboarding/","workspace":"workspace://drksci/id/dev","environment":"dev","status":"pending"}
-```
+| Field | Notes |
+| --- | --- |
+| `correlation_id` | bounded string; keep it for follow-up |
+| `prompt_id` | bounded string |
+| `idempotency_key` | required; a repeated key by the same actor returns the original record |
+| `event` | bounded string |
+| `action` | bounded string |
+| `expected_outcome` | redacted, bounded |
+| `observed_result` | redacted, bounded |
+| `reproduction_steps` | redacted, bounded |
+| `severity` | must be one of `debug`, `info`, `warning`, `error`, `critical` |
+| `message` | redacted, bounded |
 
-`correlation_id`, `received_at`, `action`, `message`, `page_path`, and `status` are required.
-`expected_outcome`, `observed_result`, `reproduction_steps`, `workspace`, and `environment` are
-optional and must be bounded in length. Keep `page_path` path-only; never retain a query string,
-referrer, cookie, authorization header, token, private key, password, or full webhook payload.
-Apply the same redaction before writing D1, the outbox, logs, or the repository mirror.
+`workspace`, `environment` and `resource` come from the request body or fall back to policy, and are
+then checked against policy. `metadata` is restricted to a fixed key allowlist
+(`component`, `operation`, `route`, `error_code`, `provider`, `attempt`, `duration_ms`,
+`status_code`, `context`) and bounded to 8 KiB; `context` accepts scalars only.
 
-## Ownership and delivery
+The response contains `feedback_id`, `correlation_id`, `status` and `created_at`. `status` begins at
+`open`; the other states are `acknowledged`, `resolved` and `dismissed`.
 
-The Worker owns validation, correlation IDs, sanitization, and the live D1 outbox. The repository
-mirror is owned by the deployment operator and receives sanitized records only after the normal
-outbox write. `FEEDBACK_ENABLED` is a deployment flag; a disabled endpoint fails closed without
-writing a partial record. Workspace, resource, and environment remain policy inputs and are never
-inferred from a hostname alone.
+Never send a query string, referrer, cookie, authorization header, token, private key, password, or a
+full webhook payload. `expected_outcome`, `observed_result`, `reproduction_steps` and `message` are
+passed through `redactSecrets` on write, but that is a backstop, not permission to send them.
 
-Transient delivery failures retry with bounded exponential backoff and an idempotency key derived
-from `correlation_id`. After the retry limit, move the record to a poison queue with a safe error
-code and operator-visible reason. Never retry indefinitely, silently drop a record, or replace an
-unknown value with an estimate. An operator may replay a poison record after fixing the cause; the
-replay preserves the original correlation ID and audit trail.
+## Access
 
-Agents should send the smallest useful report through `/feedback/` or the documented endpoint.
-They must omit secrets, tokens, credentials, local git credential-helper contents, and private
-repository data. Keep the correlation ID for follow-up and use safe reproduction steps only.
+**The endpoint authenticates its caller.** `handleRequest` calls `authenticateAny` before
+`submitFeedback`, so a request without a Cloudflare Access JWT is rejected with 401.
+
+This matters for the public `/feedback/` page, which POSTs with `credentials: "omit"`. As it stands
+that page cannot submit, and the service worker queues the report and retries against the 401. Both
+are open questions rather than settled behaviour; see the note below.
+
+`FEEDBACK_ENABLED` is a deployment flag. When it is false the endpoint fails closed without writing a
+partial record.
+
+## What is not built
+
+Recorded here deliberately, because each of these was previously documented as though it existed:
+
+- **No repository mirror.** No `drksci/id-data` repository exists, and nothing exports sanitized
+  records anywhere. `DURABLE_REPOSITORY` names it in `infra/wrangler.toml` in every environment, but
+  no code reads it.
+- **No retry, backoff or poison queue.** Writes to `feedback_outbox` always use the status `pending`;
+  nothing drains it, transitions it, or retries it. There is no replay path.
+- **No delivery guarantee.** Because the outbox is never drained, a stored record is stored and
+  nothing more. Do not read this endpoint as a delivery contract.
+
+The intended replacement is an evolver-owned inbox: `id` hands sanitized reports to the evolver and
+keeps no feedback state of its own. That work is tracked in `drksci/id-evolver`, and until it lands
+these gaps are the accurate description of what runs today.
+
+## For agents
+
+Send the smallest useful report, keep the returned `correlation_id`, and use safe reproduction steps
+only. Omit secrets, tokens, credentials, local git credential-helper contents, and private repository
+data. A report is a report — nothing here approves, grants or changes policy.
