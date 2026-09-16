@@ -1,0 +1,24 @@
+{
+  "name": "drksci / id",
+  "protocol": "mcp",
+  "transport": {
+    "type": "streamable-http",
+    "url": "https://id.drksci.com/mcp"
+  },
+  "authentication": {
+    "scheme": "oauth2",
+    "protected_resource_metadata": "https://id.drksci.com/.well-known/oauth-protected-resource",
+    "authorization_server_metadata": "https://id.drksci.com/.well-known/oauth-authorization-server"
+  },
+  "methods": [
+    "register_agent",
+    "request_access",
+    "get_grant",
+    "backup_identity",
+    "restore_identity"
+  ],
+  "workspace_selector": {
+    "canonical_host_template": "<child>.<parent>.id.drksci.com",
+    "authority": "full_canonical_workspace_chain_in_token_and_policy"
+  }
+}

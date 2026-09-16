@@ -10,7 +10,10 @@
     "docs": "/docs/",
     "idea": "/idea/",
     "llms": "/llms.txt",
-    "full_instructions": "/llms-full.txt"
+    "full_instructions": "/llms-full.txt",
+    "mcp": "/.well-known/mcp.json",
+    "oauth_protected_resource": "/.well-known/oauth-protected-resource",
+    "oauth_authorization_server": "/.well-known/oauth-authorization-server"
   },
   "request": {
     "method": "POST",

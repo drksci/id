@@ -1,0 +1,15 @@
+{
+  "resource": "https://id.drksci.com/mcp",
+  "authorization_servers": [
+    "https://id.drksci.com"
+  ],
+  "scopes_supported": [
+    "mcp:connect",
+    "delegated-access:request",
+    "delegated-access:approve"
+  ],
+  "bearer_methods_supported": [
+    "header"
+  ],
+  "resource_documentation": "https://id.drksci.com/docs/"
+}

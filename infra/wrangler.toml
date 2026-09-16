@@ -1,8 +1,9 @@
 # Cloudflare Worker deployment contract for drksci/id.
-# Replace REPLACE_WITH_* values before use; no account IDs or secrets belong here.
+# D1 IDs are explicit ${D1_DATABASE_ID_*} references rendered by CI; no account IDs or secrets
+# belong here.
 
 name = "id-worker"
-main = "../src/runtime.js"
+main = "../src/index.ts"
 compatibility_date = "2024-09-23"
 workers_dev = false
 preview_urls = false
@@ -19,11 +20,16 @@ run_worker_first = ["/api/*", "/healthz", "/readyz", "/approve/*"]
 APP_ENV = "prod"
 PUBLIC_ISSUER = "https://id.drksci.com"
 DURABLE_REPOSITORY = "drksci/id-data"
+WORKSPACE_CANONICAL_SUFFIX = "id.drksci.com"
+WORKSPACE_ALIAS_SUFFIX = "drksci.com"
+WORKSPACE_SLUG_PATTERN = "^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$"
+WORKSPACE_RESERVED_LABELS = "api,console,docs,idea,dev,test,preview,www,mcp,oauth,status"
 
 [[d1_databases]]
 binding = "DB"
 database_name = "id-data-prod"
-database_id = "REPLACE_WITH_PROD_D1_DATABASE_ID"
+database_id = "${D1_DATABASE_ID_PROD}"
+migrations_dir = "../migrations"
 
 [env.prod]
 name = "id-worker"
@@ -34,11 +40,16 @@ preview_urls = false
 APP_ENV = "prod"
 PUBLIC_ISSUER = "https://id.drksci.com"
 DURABLE_REPOSITORY = "drksci/id-data"
+WORKSPACE_CANONICAL_SUFFIX = "id.drksci.com"
+WORKSPACE_ALIAS_SUFFIX = "drksci.com"
+WORKSPACE_SLUG_PATTERN = "^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$"
+WORKSPACE_RESERVED_LABELS = "api,console,docs,idea,dev,test,preview,www,mcp,oauth,status"
 
 [[env.prod.d1_databases]]
 binding = "DB"
 database_name = "id-data-prod"
-database_id = "REPLACE_WITH_PROD_D1_DATABASE_ID"
+database_id = "${D1_DATABASE_ID_PROD}"
+migrations_dir = "../migrations"
 
 [env.dev]
 name = "id-worker-dev"
@@ -49,11 +60,16 @@ preview_urls = false
 APP_ENV = "dev"
 PUBLIC_ISSUER = "https://dev.id.drksci.com"
 DURABLE_REPOSITORY = "drksci/id-data"
+WORKSPACE_CANONICAL_SUFFIX = "id.drksci.com"
+WORKSPACE_ALIAS_SUFFIX = "drksci.com"
+WORKSPACE_SLUG_PATTERN = "^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$"
+WORKSPACE_RESERVED_LABELS = "api,console,docs,idea,dev,test,preview,www,mcp,oauth,status"
 
 [[env.dev.d1_databases]]
 binding = "DB"
 database_name = "id-data-dev"
-database_id = "REPLACE_WITH_DEV_D1_DATABASE_ID"
+database_id = "${D1_DATABASE_ID_DEV}"
+migrations_dir = "../migrations"
 
 [env.test]
 name = "id-worker-test"
@@ -64,11 +80,16 @@ preview_urls = false
 APP_ENV = "test"
 PUBLIC_ISSUER = "https://test.id.drksci.com"
 DURABLE_REPOSITORY = "drksci/id-data"
+WORKSPACE_CANONICAL_SUFFIX = "id.drksci.com"
+WORKSPACE_ALIAS_SUFFIX = "drksci.com"
+WORKSPACE_SLUG_PATTERN = "^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$"
+WORKSPACE_RESERVED_LABELS = "api,console,docs,idea,dev,test,preview,www,mcp,oauth,status"
 
 [[env.test.d1_databases]]
 binding = "DB"
 database_name = "id-data-test"
-database_id = "REPLACE_WITH_TEST_D1_DATABASE_ID"
+database_id = "${D1_DATABASE_ID_TEST}"
+migrations_dir = "../migrations"
 
 [env.preview]
 name = "id-worker-preview"
@@ -79,8 +100,13 @@ preview_urls = true
 APP_ENV = "preview"
 PUBLIC_ISSUER = "https://id-preview.drksci.com"
 DURABLE_REPOSITORY = "drksci/id-data"
+WORKSPACE_CANONICAL_SUFFIX = "id.drksci.com"
+WORKSPACE_ALIAS_SUFFIX = "drksci.com"
+WORKSPACE_SLUG_PATTERN = "^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$"
+WORKSPACE_RESERVED_LABELS = "api,console,docs,idea,dev,test,preview,www,mcp,oauth,status"
 
 [[env.preview.d1_databases]]
 binding = "DB"
 database_name = "id-data-preview"
-database_id = "REPLACE_WITH_PREVIEW_D1_DATABASE_ID"
+database_id = "${D1_DATABASE_ID_PREVIEW}"
+migrations_dir = "../migrations"

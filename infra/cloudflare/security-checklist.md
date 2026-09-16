@@ -37,6 +37,21 @@ plan: no account, zone, hostname, rule ID, or credential is safe to guess in sou
 - [ ] Test IPv4, IPv6, proxy-forwarded addresses, and authenticated actors; never trust an
       unvalidated client-supplied IP header.
 
+## GitHub App webhooks
+
+- [ ] Store the GitHub App private key and webhook secret separately with `wrangler secret put`;
+      neither belongs in Git or GitHub Actions logs.
+- [ ] Verify `X-Hub-Signature-256` over the raw request bytes with constant-time comparison before
+      parsing JSON. Reject missing, malformed, or mismatched signatures with a generic response.
+- [ ] Check `X-GitHub-Event`, `X-GitHub-Delivery`, App ID, installation ID, and repository binding
+      against an explicit allowlist. Ignore unsupported event types without granting authority.
+- [ ] Deduplicate delivery IDs in D1 before applying a state transition. A duplicate or replayed
+      delivery must be harmless and must not create a second grant or approval.
+- [ ] Bound body size and processing time at the edge. Persist only the minimum event fields needed
+      for the audit trail, and redact tokens, private keys, and full webhook payloads from logs.
+- [ ] Treat a `repository_dispatch` detector signal as an observation only; the Worker remains the
+      authority and must not treat workflow output as proof of a valid webhook.
+
 ## Verification evidence
 
 - [ ] Save rule names, scope, thresholds, and change timestamp in the release record.

@@ -17,10 +17,12 @@ on:
       - main
     paths:
       - infra/wrangler.toml
+      - infra/render-wrangler-config.py
       - src/**
       - migrations/**
       - package.json
       - package-lock.json
+      - public/**
 
 permissions:
   contents: read
@@ -33,13 +35,16 @@ concurrency:
 jobs:
   deploy:
     name: Deploy ${{ github.event.inputs.environment || 'prod' }}
-    if: ${{ hashFiles('src/runtime.js') != '' }}
     runs-on: ubuntu-latest
     environment:
       name: ${{ github.event.inputs.environment || 'prod' }}
     env:
-      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
       CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      D1_DATABASE_ID_PROD: ${{ vars.D1_DATABASE_ID_PROD }}
+      D1_DATABASE_ID_DEV: ${{ vars.D1_DATABASE_ID_DEV }}
+      D1_DATABASE_ID_TEST: ${{ vars.D1_DATABASE_ID_TEST }}
+      D1_DATABASE_ID_PREVIEW: ${{ vars.D1_DATABASE_ID_PREVIEW }}
     steps:
       - name: Check out source
         uses: actions/checkout@v4
@@ -52,22 +57,49 @@ jobs:
       - name: Validate deployment inputs
         run: |
           test -f src/runtime.js
+          test -f src/index.ts
           test -d public
           test -f infra/wrangler.toml
 
       - name: Run runtime tests
         run: npm test
 
+      - name: Render deployment config from environment variables
+        id: render-config
+        run: |
+          rendered_config="$(mktemp infra/wrangler.generated.XXXXXX.toml)"
+          python3 infra/render-wrangler-config.py --output "$rendered_config"
+          echo "path=$rendered_config" >> "$GITHUB_OUTPUT"
+
+      - name: Apply D1 migrations
+        env:
+          DEPLOY_ENVIRONMENT: ${{ github.event.inputs.environment }}
+        run: |
+          target_environment="${DEPLOY_ENVIRONMENT:-prod}"
+          case "$target_environment" in
+            prod) database_name="id-data-prod" ;;
+            dev) database_name="id-data-dev" ;;
+            test) database_name="id-data-test" ;;
+            preview) database_name="id-data-preview" ;;
+            *) echo "unsupported deployment environment" >&2; exit 1 ;;
+          esac
+          npx --yes wrangler@4 d1 migrations apply "$database_name" \
+            --config "${{ steps.render-config.outputs.path }}" \
+            --env "$target_environment" --remote
+
       - name: Deploy selected environment
         env:
           DEPLOY_ENVIRONMENT: ${{ github.event.inputs.environment }}
         run: |
-          cd infra
           if [ -n "$DEPLOY_ENVIRONMENT" ]; then
-            npx --yes wrangler@4 deploy --env "$DEPLOY_ENVIRONMENT"
+            npx --yes wrangler@4 deploy --config "${{ steps.render-config.outputs.path }}" --env "$DEPLOY_ENVIRONMENT"
           else
-            npx --yes wrangler@4 deploy --env prod
+            npx --yes wrangler@4 deploy --config "${{ steps.render-config.outputs.path }}" --env prod
           fi
+
+      - name: Remove rendered deployment config
+        if: ${{ always() && steps.render-config.outputs.path != '' }}
+        run: rm -f "${{ steps.render-config.outputs.path }}"
 
       - name: Check public readiness
         if: ${{ github.event.inputs.environment == 'prod' || github.event.inputs.environment == '' }}
