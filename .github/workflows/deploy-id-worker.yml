@@ -55,21 +55,29 @@ jobs:
           node-version: 22
 
       - name: Validate deployment inputs
+        env:
+          TARGET_ENVIRONMENT: ${{ github.event.inputs.environment || 'prod' }}
         run: |
           test -f src/runtime.js
           test -f src/index.ts
           test -d public
           test -f infra/wrangler.toml
+          # Fail before running the suite if this environment's database id is not available, rather
+          # than several steps later with a message about a different environment.
+          python3 infra/render-wrangler-config.py --env "$TARGET_ENVIRONMENT" --check
 
       - name: Run runtime tests
         run: npm test
 
       - name: Render deployment config from environment variables
         id: render-config
+        env:
+          TARGET_ENVIRONMENT: ${{ github.event.inputs.environment || 'prod' }}
         run: |
           rendered_config="$(mktemp infra/wrangler.generated.XXXXXX.toml)"
-          python3 infra/render-wrangler-config.py --output "$rendered_config"
+          python3 infra/render-wrangler-config.py --env "$TARGET_ENVIRONMENT" --output "$rendered_config"
           echo "path=$rendered_config" >> "$GITHUB_OUTPUT"
+          echo "environment=$TARGET_ENVIRONMENT" >> "$GITHUB_OUTPUT"
 
       - name: Apply D1 migrations
         env:
