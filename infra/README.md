@@ -74,6 +74,12 @@ verified bindings before provisioning any wildcard.
    [`cloudflare/security-checklist.md`](cloudflare/security-checklist.md) and
    [`github-app.example.yml`](github-app.example.yml).
 
+The signed webhook boundary is implemented independently in `src/github-webhook.js` and exported
+as `handleGitHubWebhook` for later route wiring. It accepts only signed, allowlisted deliveries and
+requires a delivery store with an atomic `claim(delivery_id)` method. The handler is intentionally
+not imported by `src/runtime.js` in this slice; route wiring must preserve the raw request body,
+provide the deployment-owned allowlists, and pass a D1-backed deduplication store.
+
 ## Deployment commands
 
 Run these from the repository root after the worker entrypoint exists and the four D1 variables are
