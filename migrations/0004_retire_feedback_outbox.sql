@@ -1,0 +1,12 @@
+-- Retire the feedback outbox.
+--
+-- Nothing ever read this table. Rows were inserted with the status 'pending' by
+-- createFeedbackWithIdempotency, and no code in this repository ever selected from it, transitioned
+-- it, retried it or drained it. It was the server half of a delivery contract that was only ever
+-- implemented on the client -- which is why the offline outbox in public/sw.js queued reports that
+-- nothing would ever collect.
+--
+-- Forward-only, and deliberately narrow: the table goes, the feedback does not. `feedback` and
+-- `feedback_suggestions` are untouched, because agents still report runtime friction through the
+-- MCP surface and that is a product capability, not process plumbing.
+DROP TABLE IF EXISTS feedback_outbox;

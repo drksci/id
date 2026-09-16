@@ -24,11 +24,11 @@ const agent = { sub: "agent://feedback/test", kind: SUBJECT_KIND.AGENT, issuer: 
 const human = { sub: "human://approver", kind: SUBJECT_KIND.HUMAN, issuer: "https://id.drksci.com", audience: ["id-worker"], scopes: ["approve"], environment: "dev", expires_at: "2026-09-18T00:00:00.000Z", jti: "human-jti" };
 
 class Store {
-  constructor() { this.idempotency = new Map(); this.feedback = new Map(); this.onboarding = new Map(); this.services = new Map(); this.outbox = []; }
+  constructor() { this.idempotency = new Map(); this.feedback = new Map(); this.onboarding = new Map(); this.services = new Map(); }
   async getIdempotency(actor, key) { return this.idempotency.get(`${actor}:${key}`) || null; }
   async putIdempotency(actor, key, value) { this.idempotency.set(`${actor}:${key}`, value); }
   async createFeedback(record) { this.feedback.set(record.feedback_id, record); }
-  async createFeedbackWithIdempotency(record, response) { await this.createFeedback(record); await this.putIdempotency(record.actor_subject_hash, record.idempotency_key, response); this.outbox.push({ feedback_id: record.feedback_id, status: "pending" }); }
+  async createFeedbackWithIdempotency(record, response) { await this.createFeedback(record); await this.putIdempotency(record.actor_subject_hash, record.idempotency_key, response); }
   async getFeedback(id) { return this.feedback.get(id) || null; }
   async createFeedbackSuggestion(record) { this.suggestions = this.suggestions || new Map(); this.suggestions.set(record.feedback_id, record); }
   async getFeedbackSuggestions(id) { return this.suggestions?.get(id) || null; }
@@ -47,7 +47,7 @@ function feedbackInput(extra = {}) {
   return { idempotency_key: "feedback-idem", correlation_id: "corr-1", prompt_id: "prompt-1", expected_outcome: "a grant is returned", observed_result: "the request was rejected", reproduction_steps: "1. request; 2. retry", workspace: policy.workspace, environment: "dev", resource: policy.resource, event: "access.request", action: "approve", severity: "error", message: "Bearer abc should never be retained", metadata: { component: "runtime", error_code: "denied" }, ...extra };
 }
 
-test("feedback is feature gated, redacts secrets, and emits a pending mirror outbox record", async () => {
+test("feedback is feature gated and redacts secrets", async () => {
   const store = new Store();
   await assert.rejects(() => submitFeedback({ subject: agent, feedback: feedbackInput(), store, policy, now: NOW, env: {} }), (error) => error.code === "feature_disabled");
   const response = await submitFeedback({ subject: agent, feedback: feedbackInput(), store, policy, now: NOW, env: { FEEDBACK_ENABLED: true }, randomId: () => "feedback_opaque_123456789" });
@@ -55,7 +55,6 @@ test("feedback is feature gated, redacts secrets, and emits a pending mirror out
   const record = store.feedback.get(response.feedback_id);
   assert.match(record.message, /Bearer \[REDACTED\]/);
   assert.match(record.actor_subject_hash, /^sha256:/);
-  assert.equal(store.outbox[0].status, "pending");
   const repeated = await submitFeedback({ subject: agent, feedback: feedbackInput(), store, policy, now: NOW, env: { FEEDBACK_ENABLED: true }, randomId: () => "different_opaque_123456" });
   assert.deepEqual(repeated, response);
 });
@@ -106,11 +105,12 @@ test("HTTP feedback route authenticates and feature gates before persistence", a
   assert.equal(disabled.status, 404);
 });
 
-test("D1 feedback persistence batches record, outbox and idempotency", async () => {
+test("D1 feedback persistence batches the record and its idempotency key", async () => {
   const batches = [];
   const db = { prepare(sql) { return { bind(...values) { return { sql, values, async run() { return { meta: { changes: 1 } }; } }; } }; }, async batch(statements) { batches.push(statements); } };
   const store = new D1Store(db);
   await store.createFeedbackWithIdempotency({ feedback_id: "feedback_d1_123456789", actor_subject_hash: "sha256:abc", actor_kind: "agent", correlation_id: "c", prompt_id: "p", workspace: "w", environment: "dev", resource: "r", event: "e", action: "a", context: undefined, expected_outcome: "x", observed_result: "y", reproduction_steps: "z", severity: "error", message: "safe", metadata: {}, created_at: NOW.toISOString(), updated_at: NOW.toISOString(), status: "open", idempotency_key: "i" }, { feedback_id: "feedback_d1_123456789" });
   assert.equal(batches.length, 1);
-  assert.equal(batches[0].length, 3);
+  assert.equal(batches[0].length, 2, "the record and the idempotency key; the outbox was retired in 0004");
+  assert.equal(batches[0].some((statement) => /feedback_outbox/.test(statement.sql)), false, "nothing writes the retired table");
 });

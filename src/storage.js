@@ -19,7 +19,6 @@ const TABLE = Object.freeze({
   APPROVERS: "approvers",
   DELIVERIES: "webhook_deliveries",
   FEEDBACK: "feedback",
-  OUTBOX: "feedback_outbox",
   ONBOARDING: "onboarding_requests",
   SERVICES: "service_catalog",
   SUGGESTIONS: "feedback_suggestions",
@@ -200,7 +199,6 @@ export class D1Store {
     if (!this.db || typeof this.db.batch !== "function") unavailable();
     await this.db.batch([
       this.prepare(`INSERT INTO ${TABLE.FEEDBACK} (feedback_id, actor_subject_hash, actor_kind, correlation_id, prompt_id, workspace, environment, resource, event, action, context_json, expected_outcome, observed_result, reproduction_steps, severity, message, metadata_json, created_at, updated_at, status, idempotency_key) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, record.feedback_id, record.actor_subject_hash, record.actor_kind, record.correlation_id, record.prompt_id, record.workspace, record.environment, record.resource, record.event, record.action, record.context ? JSON.stringify(record.context) : null, record.expected_outcome, record.observed_result, record.reproduction_steps, record.severity, record.message, JSON.stringify(record.metadata), record.created_at, record.updated_at, record.status, record.idempotency_key),
-      this.prepare(`INSERT INTO ${TABLE.OUTBOX} (outbox_id, feedback_id, payload_json, status, created_at) VALUES (?, ?, ?, ?, ?)`, record.feedback_id, record.feedback_id, JSON.stringify({ feedback_id: record.feedback_id, schema: SCHEMA.FEEDBACK, message: record.message, metadata: record.metadata }), "pending", record.created_at),
       this.prepare(`INSERT INTO ${TABLE.IDEMPOTENCY} (actor_id, idempotency_key, response_json, created_at) VALUES (?, ?, ?, ?)`, record.actor_subject_hash, record.idempotency_key, JSON.stringify(response), record.created_at),
     ]);
   }
