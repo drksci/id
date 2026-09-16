@@ -1,0 +1,93 @@
+name: Test
+
+# There was no pull-request gate in this repository: the only workflows were the deploy (dispatch,
+# plus a path-filtered push to main) and a repository_dispatch detector. A change could therefore
+# reach main with nothing having verified it. This adds the missing check.
+#
+# The suite needs no install step, because the runtime is deliberately dependency-free.
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+concurrency:
+  group: test-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Run the worker test suite
+        run: npm test
+
+  deployment-contract:
+    name: Deployment contract
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      # The checked-in operator config is documented as safe to commit: it carries explicit
+      # ${D1_DATABASE_ID_*} references and no account id, database id, token, hostname or secret.
+      # That claim is only worth something if something checks it.
+      - name: The operator config carries placeholders, not values
+        run: |
+          set -euo pipefail
+          file=infra/wrangler.toml
+
+          if grep -nE '[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}' "$file"; then
+            echo "::error file=$file::a literal UUID is committed; database ids are rendered from environment variables"
+            exit 1
+          fi
+
+          if grep -niE 'account_id|api_token|private_key|webhook_secret|password' "$file"; then
+            echo "::error file=$file::a secret-shaped value is committed"
+            exit 1
+          fi
+
+          grep -q 'D1_DATABASE_ID_PROD' "$file" || {
+            echo "::error file=$file::the prod database placeholder is missing"
+            exit 1
+          }
+
+          echo "operator config is committed as placeholders only"
+
+      # The renderer must fail closed. A deployment that silently proceeds without a database id is
+      # worse than one that refuses, so the refusal itself is asserted here.
+      - name: Rendering without a database id fails closed
+        run: |
+          set -euo pipefail
+          if python3 infra/render-wrangler-config.py --output /tmp/rendered.toml 2>/tmp/render.err; then
+            echo "::error::the renderer succeeded with no D1_DATABASE_ID_* set; it must fail closed"
+            exit 1
+          fi
+          echo "renderer correctly refused:"
+          sed 's/^/  /' /tmp/render.err
+
+      # One placeholder per environment must remain, so an unrendered config can never be deployed by
+      # accident and can never point at another environment's database.
+      - name: Every environment still has an unresolved placeholder
+        run: |
+          set -euo pipefail
+          for env in PROD DEV TEST PREVIEW; do
+            grep -q "\${D1_DATABASE_ID_$env}" infra/wrangler.toml || {
+              echo "::error::infra/wrangler.toml is missing the \${D1_DATABASE_ID_$env} placeholder"
+              exit 1
+            }
+          done
+          echo "all four environment placeholders present"
