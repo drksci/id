@@ -3,6 +3,6 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "test": "node --test tests/runtime.test.js"
+    "test": "node --test tests/runtime.test.js tests/feedback.test.js tests/webhook.test.js tests/runtime-webhook.test.js"
   }
 }
