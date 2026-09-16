@@ -1,4 +1,5 @@
 import { createD1Store } from "./storage.js";
+import { verifyAccessJwt } from "./auth.js";
 
 /**
  * Small, dependency-free authorization primitives for the id-worker.
@@ -29,6 +30,27 @@ export const MCP_METHOD = Object.freeze({
   BACKUP_IDENTITY: "backup_identity",
   RESTORE_IDENTITY: "restore_identity",
 });
+export const MCP_PROTOCOL = Object.freeze({
+  INITIALIZE: "initialize",
+  TOOLS_LIST: "tools/list",
+  TOOLS_CALL: "tools/call",
+  INITIALIZED: "notifications/initialized",
+  VERSION: "2025-06-18",
+});
+export const MCP_TOOL = Object.freeze({
+  REGISTER_AGENT: "register_agent",
+  REQUEST_ACCESS: "request_access",
+  GET_GRANT: "get_grant",
+  BACKUP_IDENTITY: "backup_identity",
+  RESTORE_IDENTITY: "restore_identity",
+});
+export const MCP_TOOLS = Object.freeze([
+  Object.freeze({ name: MCP_TOOL.REGISTER_AGENT, description: "Register an agent public key.", inputSchema: { type: "object", required: ["public_key"], properties: { public_key: { type: "string" } } } }),
+  Object.freeze({ name: MCP_TOOL.REQUEST_ACCESS, description: "Request bounded delegated access.", inputSchema: { type: "object", required: ["actor_id", "resource", "actions", "expires_at", "reason", "idempotency_key"], properties: { actor_id: { type: "string" }, workspace: { type: "string" }, resource: { type: "string" }, actions: { type: "array", items: { type: "string" } }, environment: { type: "string" }, expires_at: { type: "string" }, reason: { type: "string" }, idempotency_key: { type: "string" } } } }),
+  Object.freeze({ name: MCP_TOOL.GET_GRANT, description: "Retrieve the authenticated agent grant.", inputSchema: { type: "object", required: ["grant_id"], properties: { grant_id: { type: "string" } } } }),
+  Object.freeze({ name: MCP_TOOL.BACKUP_IDENTITY, description: "Store a client-encrypted identity envelope.", inputSchema: { type: "object", required: ["envelope"], properties: { envelope: { type: "object" } } } }),
+  Object.freeze({ name: MCP_TOOL.RESTORE_IDENTITY, description: "Restore an encrypted identity envelope with proof and authorization.", inputSchema: { type: "object", required: ["backup_id", "proof"], properties: { backup_id: { type: "string" }, proof: { type: "object" } } } }),
+]);
 export const AUDIENCE = "id-worker";
 export const ENVIRONMENT = Object.freeze({
   LOCAL: "local",
@@ -361,15 +383,20 @@ function verifiedClaim(result, env, expectedKind) {
   // marker; the Worker never decodes or trusts bearer claims itself.
   if (!result || result.verified !== true || !result.claim) fail("authentication_unavailable", "verified identity authentication is required");
   const claim = assertLiveSubject(result.claim, new Date());
-  assertAudience(claim, AUDIENCE);
+  const configuredAudience = env.ACCESS_AUDIENCE || AUDIENCE;
+  if (Array.isArray(configuredAudience)) {
+    if (!configuredAudience.some((value) => claim.audience.includes(value))) fail("wrong_audience", "subject is not bound to this audience", 401);
+  } else {
+    assertAudience(claim, configuredAudience);
+  }
   if (env.PUBLIC_ISSUER && claim.issuer !== env.PUBLIC_ISSUER) fail("issuer_mismatch", "subject issuer is not configured for this Worker", 401);
   if (claim.kind !== expectedKind) fail("wrong_subject_kind", `${expectedKind} subject required`, 403);
   return claim;
 }
 
 async function authenticate(request, env, expectedKind) {
-  if (typeof env?.AUTHENTICATE !== "function") fail("authentication_unavailable", "identity authentication is unavailable");
-  return verifiedClaim(await env.AUTHENTICATE(request), env, expectedKind);
+  const authenticator = typeof env?.AUTHENTICATE === "function" ? env.AUTHENTICATE : (incoming) => verifyAccessJwt(incoming, env);
+  return verifiedClaim(await authenticator(request), env, expectedKind);
 }
 
 function pathParts(url) { return new URL(url).pathname.split("/").filter(Boolean); }
@@ -406,8 +433,10 @@ export async function handleRequest(request, env = {}) {
 }
 
 export async function handleMcp(request, env = {}) {
+  let messageId = null;
   try {
     const body = await parseBody(request);
+    messageId = body?.id ?? null;
     const subject = await authenticate(request, env, SUBJECT_KIND.AGENT);
     let authorizer;
     if (body.method === MCP_METHOD.RESTORE_IDENTITY) {
@@ -416,12 +445,29 @@ export async function handleMcp(request, env = {}) {
     }
     const result = await dispatchMcp(body, { subject, authorizer, policy: runtimePolicy(env), store: storeForEnv(env), env });
     return json({ jsonrpc: "2.0", id: body.id ?? null, result });
-  } catch (error) { return json({ jsonrpc: "2.0", id: null, error: { code: error instanceof FailClosedError ? error.code : "service_unavailable" } }, error instanceof FailClosedError ? error.status : 503); }
+  } catch (error) { return json({ jsonrpc: "2.0", id: messageId, error: { code: error instanceof FailClosedError ? error.code : "service_unavailable" } }, error instanceof FailClosedError ? error.status : 503); }
 }
 
 export async function dispatchMcp(message, { subject, authorizer, policy, store, env = {} } = {}) {
   if (!message || message.jsonrpc !== "2.0" || typeof message.method !== "string") fail("invalid_mcp_request", "invalid MCP request", 400);
+  if (message.method === MCP_PROTOCOL.INITIALIZE) return { protocolVersion: MCP_PROTOCOL.VERSION, capabilities: { tools: {} }, serverInfo: { name: "id-worker", version: "1.0.0" } };
+  if (message.method === MCP_PROTOCOL.TOOLS_LIST) return { tools: MCP_TOOLS };
+  if (message.method === MCP_PROTOCOL.INITIALIZED) return null;
   const params = message.params || {};
+  if (message.method === MCP_PROTOCOL.TOOLS_CALL) {
+    if (!params || typeof params.name !== "string") fail("invalid_mcp_request", "tool name is required", 400);
+    const toolArguments = params.arguments && typeof params.arguments === "object" ? params.arguments : {};
+    let toolResult;
+    switch (params.name) {
+      case MCP_TOOL.REGISTER_AGENT: toolResult = await registerAgent({ subject, publicKey: toolArguments.public_key, policy, store }); break;
+      case MCP_TOOL.REQUEST_ACCESS: toolResult = await requestAccess({ subject, request: toolArguments, policy, store }); break;
+      case MCP_TOOL.GET_GRANT: toolResult = await getGrant({ subject, grantId: toolArguments.grant_id, policy, store }); break;
+      case MCP_TOOL.BACKUP_IDENTITY: toolResult = await backupIdentity({ subject, envelope: toolArguments.envelope, store }); break;
+      case MCP_TOOL.RESTORE_IDENTITY: toolResult = await restoreIdentity({ subject, backupId: toolArguments.backup_id, proof: toolArguments.proof, authorizer, store, verifyProof: env.verifyProof }); break;
+      default: fail("method_not_found", "MCP tool not found", 404);
+    }
+    return { content: [{ type: "text", text: JSON.stringify(toolResult) }], structuredContent: toolResult, ...toolResult };
+  }
   switch (message.method) {
     case MCP_METHOD.REGISTER_AGENT: return registerAgent({ subject, publicKey: params.public_key, policy, store });
     case MCP_METHOD.REQUEST_ACCESS: return requestAccess({ subject, request: params, policy, store });

@@ -7,6 +7,8 @@ import {
   STATUS,
   approveAccessRequest,
   backupIdentity,
+  MCP_PROTOCOL,
+  MCP_TOOL,
   dispatchMcp,
   getGrant,
   handleRequest,
@@ -15,6 +17,7 @@ import {
   restoreIdentity,
 } from "../src/runtime.js";
 import { D1Store } from "../src/storage.js";
+import { clearJwksCache, verifyAccessJwt } from "../src/auth.js";
 
 const NOW = new Date("2026-09-17T00:00:00.000Z");
 const agent = {
@@ -78,8 +81,8 @@ test("access approval is one-time and idempotent", async () => {
 
 test("missing authentication or storage fails closed", async () => {
   const response = await handleRequest(new Request("https://id.drksci.com/api/v1/access-requests", { method: "POST", headers: { "content-type": "application/json" }, body: "{}" }), {});
-  assert.equal(response.status, 503);
-  assert.deepEqual(await response.json(), { error: "authentication_unavailable" });
+  assert.equal(response.status, 401);
+  assert.deepEqual(await response.json(), { error: "authentication_required" });
   await assert.rejects(() => requestAccess({ subject: agent, request: requestBody(), store: {}, now: NOW }), (error) => error.code === "storage_unavailable");
   const unverified = await handleRequest(new Request("https://id.drksci.com/api/v1/access-requests", { method: "POST", headers: { "content-type": "application/json" }, body: "{}" }), { AUTHENTICATE: async () => ({ claim: agent }) });
   assert.equal(unverified.status, 503);
@@ -155,4 +158,59 @@ test("policy requires a live parent grant and active approver", async () => {
   const denied = new Store({ parentGrant, approver: false });
   const pending = await requestAccess({ subject: agent, request: requestBody({ workspace: policy.workspace, idempotency_key: "idem-denied" }), policy, store: denied, now: NOW, randomId: () => "request_bound_987654321" });
   await assert.rejects(() => approveAccessRequest({ requestId: pending.request_id, subject: human, decision: DECISION.APPROVE, policy, store: denied, now: NOW }), (error) => error.code === "approver_not_allowed");
+});
+
+function base64url(bytes) {
+  const binary = typeof bytes === "string" ? bytes : String.fromCharCode(...new Uint8Array(bytes));
+  return btoa(binary).replace(/=/g, "").replace(/\+/g, "-").replace(/\//g, "_");
+}
+
+async function signedJwt(privateKey, payload, kid = "kid-1") {
+  const header = { alg: "RS256", typ: "JWT", kid };
+  const encoded = `${base64url(new TextEncoder().encode(JSON.stringify(header)))}.${base64url(new TextEncoder().encode(JSON.stringify(payload)))}`;
+  const signature = await crypto.subtle.sign({ name: "RSASSA-PKCS1-v1_5" }, privateKey, new TextEncoder().encode(encoded));
+  return `${encoded}.${base64url(signature)}`;
+}
+
+test("Access JWT verification enforces issuer, audience, expiry, kid and signature with JWKS cache", async () => {
+  clearJwksCache();
+  const pair = await crypto.subtle.generateKey({ name: "RSASSA-PKCS1-v1_5", modulusLength: 2048, publicExponent: new Uint8Array([1, 0, 1]), hash: "SHA-256" }, true, ["sign", "verify"]);
+  const publicJwk = { ...(await crypto.subtle.exportKey("jwk", pair.publicKey)), kid: "kid-1", alg: "RS256", use: "sig" };
+  let fetches = 0;
+  const env = { ACCESS_ISSUER: "https://access.example", ACCESS_AUDIENCE: "id-worker", ACCESS_JWKS_URL: "https://access.example/certs", ACCESS_AGENT_SCOPES: ["contents:read"], APP_ENV: "dev" };
+  const payload = { iss: env.ACCESS_ISSUER, aud: env.ACCESS_AUDIENCE, sub: agent.sub, kind: "agent", parent_id: agent.parent_id, scope: "contents:read", environment: "dev", exp: Math.floor(Date.now() / 1000) + 300, jti: "jwt-1" };
+  const token = await signedJwt(pair.privateKey, payload);
+  const request = new Request("https://id.drksci.com/mcp", { headers: { authorization: `Bearer ${token}` } });
+  const fetcher = async () => { fetches += 1; return new Response(JSON.stringify({ keys: [publicJwk] }), { headers: { "content-type": "application/json" } }); };
+  const result = await verifyAccessJwt(request, env, { fetcher });
+  assert.equal(result.verified, true);
+  assert.equal(result.claim.sub, agent.sub);
+  await verifyAccessJwt(request, env, { fetcher });
+  assert.equal(fetches, 1);
+  const tokenParts = token.split(".");
+  const tamperedPayload = `${tokenParts[1].slice(0, -1)}${tokenParts[1].endsWith("A") ? "B" : "A"}`;
+  const tampered = `${tokenParts[0]}.${tamperedPayload}.${tokenParts[2]}`;
+  await assert.rejects(() => verifyAccessJwt(new Request(request.url, { headers: { authorization: `Bearer ${tampered}` } }), env, { fetcher }), (error) => error.code === "invalid_token");
+  await assert.rejects(() => verifyAccessJwt(new Request(request.url, { headers: { authorization: `Bearer ${token}` } }), { ...env, ACCESS_AUDIENCE: "other" }, { fetcher }), (error) => error.code === "wrong_audience");
+});
+
+test("MCP protocol supports initialize, tools/list and tools/call", async () => {
+  const initialized = await dispatchMcp({ jsonrpc: "2.0", id: 1, method: MCP_PROTOCOL.INITIALIZE }, {});
+  assert.equal(initialized.protocolVersion, MCP_PROTOCOL.VERSION);
+  const listed = await dispatchMcp({ jsonrpc: "2.0", id: 2, method: MCP_PROTOCOL.TOOLS_LIST }, {});
+  assert.ok(listed.tools.some((tool) => tool.name === MCP_TOOL.REQUEST_ACCESS));
+  const store = new Store();
+  const called = await dispatchMcp({ jsonrpc: "2.0", id: 3, method: MCP_PROTOCOL.TOOLS_CALL, params: { name: MCP_TOOL.BACKUP_IDENTITY, arguments: { envelope: { algorithm: "AES-GCM", nonce: "bm9uY2U", ciphertext: "Y2lwaGVydGV4dA" } } } }, { subject: agent, store });
+  assert.equal(called.stored, true);
+  assert.equal(called.content[0].type, "text");
+});
+
+test("HTTP MCP initialize preserves JSON-RPC id and uses authenticated policy", async () => {
+  const claim = { ...agent, expires_at: "2099-01-01T00:00:00.000Z" };
+  const request = new Request("https://id.drksci.com/mcp", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ jsonrpc: "2.0", id: 42, method: MCP_PROTOCOL.INITIALIZE }) });
+  const response = await handleRequest(request, { AUTHENTICATE: async () => ({ verified: true, claim }), STORE: new Store(), APP_ENV: "dev", WORKSPACE: "workspace://drksci/alphaville_foundary/dev", RESOURCE: "github:alphaville-foundry/alphaville_foundary" });
+  assert.equal(response.status, 200);
+  const body = await response.json();
+  assert.equal(body.id, 42);
+  assert.equal(body.result.protocolVersion, MCP_PROTOCOL.VERSION);
 });
