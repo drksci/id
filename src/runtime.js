@@ -451,6 +451,9 @@ export async function handleRequest(request, env = {}) {
       if (typeof store.checkReadiness !== "function" || !(await store.checkReadiness())) fail("not_ready", "authorization storage is not ready");
       return json({ status: "ready" });
     }
+    if (request.method === "POST" && url.pathname === "/api/v1/github/webhook") {
+      return handleGitHubWebhook(request, githubWebhookOptions(env));
+    }
     if (request.method === "POST" && url.pathname === "/api/v1/access-requests") {
       const subject = await authenticate(request, env, SUBJECT_KIND.AGENT);
       const body = await parseBody(request);
