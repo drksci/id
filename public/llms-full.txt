@@ -26,6 +26,36 @@ The fallback is a Cloudflare Access protected approval URL with operator OTP. Th
 
 Local development has no secret requirement. Without a configured gateway, the static pages provide discovery and examples only.
 
+## Feedback and debugging
+
+Could this run smoother? What were you trying to do? Use `/feedback/` after an action or failed
+flow. The form carries optional expected outcome, observed result, and safe reproduction steps,
+plus a generated `correlation_id` and path-only `page_path`. It submits a sanitized JSON body to
+`POST /api/v1/feedback` with `credentials: omit`; it never sends cookies, tokens, bearer headers,
+private keys, the query string, or local git credentials. Common secret formats are redacted before
+submission, but users must still leave secrets out. `FEEDBACK_ENABLED` is the deployment flag.
+
+The feedback mirror/outbox uses the root [`feedback.md`](../feedback.md) format: append one
+sanitized record, retain the correlation ID, retry transient failures with a bounded backoff, and
+move repeatedly failing records to a poison queue with an operator-visible reason. Agents should
+submit the smallest useful report and must not include credentials.
+
+## First-touch onboarding and service catalog
+
+The `/catalog/` page lists service types, capabilities, workspace parent-child bindings, and
+verification states (`verified`, `pending`, `unverified`, `disabled`). Auto-discovery may create a
+pending record while it checks repository, parent workspace, environment, and DNS CNAME/TXT
+evidence; pending onboarding never grants authority.
+
+Open `/onboarding/` for the first-touch flow. It can display a service URL and repository hint
+derived from an explicit safe URL parameter or a local git remote supplied by the client. The page
+explains GitHub App installation, Cloudflare application/domain authorization, and DNS verification
+in one concise approval card. No provider permission opens until the operator explicitly approves.
+The server-side start endpoint must issue state and PKCE, reuse an existing approved GitHub session
+when available, and accept only same-origin path return URLs. Local git credential helpers are never
+read or uploaded as bearer secrets. After verification, issue only a bounded grant for the verified
+repository, full canonical workspace chain, declared actions, and explicit environment.
+
 ## Client setup
 
 Coding agents should read repository-local `AGENTS.md`, `CLAUDE.md`, and Cursor

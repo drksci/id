@@ -1,0 +1,173 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="theme-color" content="#24231f">
+<link rel="manifest" href="/manifest.webmanifest">
+<script src="/install.js" defer></script>
+<title>drksci / id — feedback</title>
+<style>
+:root{color-scheme:light}*{box-sizing:border-box}body{margin:0;padding:2rem 1.25rem;background:#efede6;color:#24231f;font:15px/1.6 ui-monospace,SFMono-Regular,Menlo,monospace}main{max-width:44rem;margin:auto}a{color:#24231f}.back{color:#68675f}h1{margin:2rem 0 .5rem;font:2rem/1.1 "Comic Sans MS","Bradley Hand",cursive;font-weight:500;letter-spacing:.06em}h2{margin:2rem 0 .5rem;font-size:1rem}p{max-width:40rem;color:#68675f}form{display:grid;gap:1rem;margin-top:1.5rem}label{display:grid;gap:.35rem;color:#24231f}input,textarea,button{font:inherit}input,textarea{width:100%;border:1px solid #68675f;border-radius:.3rem;background:#f8f6f0;color:#24231f;padding:.65rem}textarea{min-height:9rem;resize:vertical}input[readonly]{color:#68675f}button{border:1px solid #24231f;border-radius:.3rem;background:#24231f;color:#efede6;padding:.65rem .9rem;cursor:pointer}button.secondary{background:transparent;color:#24231f}button:disabled{cursor:not-allowed;opacity:.5}.actions{display:flex;flex-wrap:wrap;gap:.75rem}.hint{font-size:.85rem;color:#68675f;margin:0}.status{min-height:1.6em;margin:1rem 0;color:#24231f}.status[data-kind="error"]{color:#8a2f24}.status[data-kind="success"]{color:#2f5c3a}dialog{max-width:34rem;border:1px solid #24231f;background:#efede6;color:#24231f;padding:1.25rem}dialog::backdrop{background:#24231f66}dl{display:grid;grid-template-columns:max-content 1fr;gap:.4rem .9rem;font-size:.85rem}dt{color:#68675f}dd{margin:0;overflow-wrap:anywhere}@media(prefers-reduced-motion:reduce){*{scroll-behavior:auto!important;transition:none!important}}
+</style>
+</head>
+<body>
+<main>
+<p><a class="back" href="/">drksci / id</a></p>
+<h1>Feedback</h1>
+<p><strong>Could this run smoother? What were you trying to do?</strong> Tell us what happened. The form sends a redacted report with a correlation ID; it never attaches cookies, credentials, tokens, or the current query string. Do not paste secrets.</p>
+<form id="feedback-form" novalidate>
+<label for="action">Action or surface
+<input id="action" name="action" maxlength="120" autocomplete="off" placeholder="for example, onboarding or access request">
+</label>
+<label for="expected">Expected outcome <span class="hint">optional</span>
+<input id="expected" name="expected" maxlength="500" autocomplete="off">
+</label>
+<label for="observed">Observed result <span class="hint">optional</span>
+<input id="observed" name="observed" maxlength="500" autocomplete="off">
+</label>
+<label for="message">What happened?
+<textarea id="message" name="message" maxlength="2000" required placeholder="Describe the smallest useful reproduction. Leave out credentials and private data."></textarea>
+</label>
+<label for="steps">Safe reproduction steps <span class="hint">optional; no tokens or private data</span>
+<textarea id="steps" name="steps" maxlength="1200"></textarea>
+</label>
+<label for="correlation-id">Correlation ID
+<input id="correlation-id" name="correlation_id" readonly aria-describedby="correlation-help">
+</label>
+<p id="correlation-help" class="hint">Keep this ID if you need to discuss the report later.</p>
+<div class="actions"><button type="submit" id="send">Send feedback</button><button type="button" class="secondary" id="retry" hidden>Retry pending report</button><button type="button" class="secondary" id="debug">Review debug context</button></div>
+</form>
+<p id="status" class="status" role="status" aria-live="polite"></p>
+<p><a href="/onboarding/?action=feedback">first-touch onboarding</a> · <a href="/.well-known/agent-access.json">machine discovery</a></p>
+</main>
+<dialog id="debug-dialog" aria-labelledby="debug-title">
+<h2 id="debug-title">Debug context</h2>
+<p>These values are safe selectors and diagnostics. The feedback request omits the query string and browser credentials.</p>
+<dl><dt>Page path</dt><dd id="debug-path"></dd><dt>Action</dt><dd id="debug-action"></dd><dt>Correlation ID</dt><dd id="debug-correlation"></dd><dt>Endpoint</dt><dd>/api/v1/feedback</dd></dl>
+<form method="dialog"><button class="secondary">Close</button></form>
+</dialog>
+<script>
+(() => {
+  const ENDPOINT = "/api/v1/feedback";
+  const PENDING_KEY = "drksci.id.feedback.pending";
+  const MAX_MESSAGE_LENGTH = 2000;
+  const form = document.querySelector("#feedback-form");
+  const action = document.querySelector("#action");
+  const expected = document.querySelector("#expected");
+  const observed = document.querySelector("#observed");
+  const message = document.querySelector("#message");
+  const steps = document.querySelector("#steps");
+  const correlation = document.querySelector("#correlation-id");
+  const send = document.querySelector("#send");
+  const retry = document.querySelector("#retry");
+  const status = document.querySelector("#status");
+  const dialog = document.querySelector("#debug-dialog");
+  const params = new URLSearchParams(window.location.search);
+  const secretPatterns = [
+    /-----BEGIN [^-]+-----[\s\S]*?-----END [^-]+-----/gi,
+    /\b(?:bearer|access[_ -]?token|refresh[_ -]?token|api[_ -]?key|client[_ -]?secret|password|private[_ -]?key)\s*[:=]\s*[^\s,;]+/gi,
+    /\b(?:ghp_|github_pat_|xox[baprs]-|sk-)[A-Za-z0-9._-]{16,}/gi,
+    /\beyJ[A-Za-z0-9_-]{20,}\.[A-Za-z0-9_-]{20,}\.[A-Za-z0-9_-]{20,}\b/g,
+    /([?&](?:access_token|refresh_token|token|secret|key|code|signature)=)[^&#\s]+/gi
+  ];
+
+  function redact(value) {
+    return secretPatterns.reduce((result, pattern) => result.replace(pattern, "[redacted]"), String(value || ""));
+  }
+
+  function clean(value, limit) {
+    return redact(value).replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/g, "").trim().slice(0, limit);
+  }
+
+  function newCorrelationId() {
+    if (window.crypto && typeof window.crypto.randomUUID === "function") return window.crypto.randomUUID();
+    if (window.crypto && typeof window.crypto.getRandomValues === "function") {
+      const bytes = window.crypto.getRandomValues(new Uint8Array(16));
+      return Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0")).join("");
+    }
+    return `local-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+  }
+
+  function safeCorrelation(value) {
+    const candidate = clean(value, 80);
+    return /^[A-Za-z0-9][A-Za-z0-9._:-]{7,79}$/.test(candidate) ? candidate : newCorrelationId();
+  }
+
+  function setStatus(text, kind) {
+    status.textContent = text;
+    status.dataset.kind = kind || "";
+  }
+
+  function payloadFromForm() {
+    return {
+      action: clean(action.value || "general", 120),
+      expected_outcome: clean(expected.value, 500),
+      observed_result: clean(observed.value, 500),
+      message: clean(message.value, MAX_MESSAGE_LENGTH),
+      reproduction_steps: clean(steps.value, 1200),
+      correlation_id: safeCorrelation(correlation.value),
+      page_path: window.location.pathname
+    };
+  }
+
+  function storePending(payload) {
+    try { window.localStorage.setItem(PENDING_KEY, JSON.stringify(payload)); retry.hidden = false; } catch (_) { /* storage is optional */ }
+  }
+
+  function loadPending() {
+    try {
+      const saved = JSON.parse(window.localStorage.getItem(PENDING_KEY) || "null");
+      return saved && typeof saved === "object" ? saved : null;
+    } catch (_) { return null; }
+  }
+
+  function clearPending() {
+    try { window.localStorage.removeItem(PENDING_KEY); } catch (_) { /* storage is optional */ }
+    retry.hidden = true;
+  }
+
+  async function submitPayload(payload) {
+    if (!navigator.onLine) { storePending(payload); setStatus("You are offline. The redacted report is saved for retry.", "error"); return false; }
+    try {
+      const response = await fetch(ENDPOINT, { method: "POST", credentials: "omit", headers: { "content-type": "application/json" }, body: JSON.stringify(payload) });
+      if (!response.ok) throw new Error("feedback endpoint unavailable");
+      clearPending();
+      setStatus(`Feedback sent. Keep correlation ID ${payload.correlation_id} for follow-up.`, "success");
+      return true;
+    } catch (_) {
+      storePending(payload);
+      setStatus("Feedback could not be sent. The redacted report is saved for retry.", "error");
+      return false;
+    }
+  }
+
+  action.value = clean(params.get("action") || "general", 120);
+  correlation.value = safeCorrelation(params.get("correlation_id"));
+  document.querySelector("#debug-path").textContent = window.location.pathname;
+  document.querySelector("#debug-action").textContent = action.value;
+  document.querySelector("#debug-correlation").textContent = correlation.value;
+  if (loadPending()) { retry.hidden = false; setStatus("A redacted report is waiting for retry."); }
+
+  form.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    if (!message.value.trim()) { setStatus("Add a short description before sending feedback.", "error"); message.focus(); return; }
+    send.disabled = true;
+    await submitPayload(payloadFromForm());
+    send.disabled = false;
+  });
+
+  retry.addEventListener("click", async () => {
+    const pending = loadPending();
+    if (!pending) { clearPending(); return; }
+    retry.disabled = true;
+    await submitPayload(pending);
+    retry.disabled = false;
+  });
+
+  document.querySelector("#debug").addEventListener("click", () => { dialog.showModal(); });
+  window.addEventListener("online", () => { if (loadPending()) setStatus("You are online. Retry the saved report when ready."); });
+})();
+</script>
+</body>
+</html>

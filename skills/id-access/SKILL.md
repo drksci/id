@@ -75,6 +75,22 @@ Without MCP/OAuth, print or open the authenticated `/ask/{request_id}` URL.
 Back up policy/audit to `drksci/id-data`; D1 is live state and its outbox must
 be replayable.
 
+## Feedback and first-touch onboarding
+
+Could this run smoother? What were you trying to do? Use `/feedback/` with the action,
+expected outcome, observed result, safe reproduction steps, correlation ID, and path-only page
+context. Sanitize before `POST /api/v1/feedback`; omit secrets, tokens, cookies, credentials,
+query strings, and local git credential helpers. `FEEDBACK_ENABLED` controls availability. The
+sanitized `feedback.md` mirror/outbox uses bounded retries and a poison queue for repeated failures.
+
+Use `/onboarding/` for GitHub App installation, Cloudflare authorization, and DNS CNAME/TXT
+verification. Detect a repository from its git remote and a service URL from trusted context, but
+require one explicit approval before opening provider permissions. The server-side flow issues
+state and PKCE, reuses an existing approved GitHub session where available, and accepts only
+same-origin path return URLs. Local git credential helpers are never read or uploaded as bearer
+secrets. A pending catalog record is non-authoritative until repository, parent workspace,
+environment, and DNS evidence are verified; only then issue a bounded grant.
+
 KISS checks: aliases are routing, not auth; register exact workspaces/domains;
 prevent alias recycling and reserve subdomains; make approval links single-use
 because scanners may consume them; detect parent cycles; allow for clock skew

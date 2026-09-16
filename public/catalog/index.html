@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="theme-color" content="#24231f">
+<link rel="manifest" href="/manifest.webmanifest">
+<script src="/install.js" defer></script>
+<title>drksci / id — service catalog</title>
+<style>
+:root{color-scheme:light}*{box-sizing:border-box}body{margin:0;padding:2rem 1.25rem;background:#efede6;color:#24231f;font:15px/1.6 ui-monospace,SFMono-Regular,Menlo,monospace}main{max-width:48rem;margin:auto}a{color:#24231f}.back{color:#68675f}h1{margin:2rem 0 .5rem;font:2rem/1.1 "Comic Sans MS","Bradley Hand",cursive;font-weight:500;letter-spacing:.06em}h2{margin:2rem 0 .5rem;font-size:1rem}p{max-width:44rem;color:#68675f}.catalog{display:grid;gap:1rem;margin-top:1.25rem}.service{border:1px solid #68675f;background:#f8f6f0;padding:1rem}.service h2{margin:.1rem 0 .35rem}.service dl{display:grid;grid-template-columns:max-content 1fr;gap:.35rem .8rem;font-size:.88rem}.service dt{color:#68675f}.service dd{margin:0;overflow-wrap:anywhere}.state{font-weight:700}.state[data-state="verified"]{color:#2f5c3a}.state[data-state="pending"]{color:#795b1c}.state[data-state="unverified"]{color:#8a2f24}.service p{margin:.8rem 0 0}.notice{border-left:3px solid #68675f;padding-left:.8rem}.feedback{font-size:.85rem}code{font-size:.9em}:focus-visible{outline:2px solid #24231f;outline-offset:3px}@media(prefers-reduced-motion:reduce){*{scroll-behavior:auto!important;transition:none!important}}
+</style>
+</head>
+<body>
+<main>
+<p><a class="back" href="/">drksci / id</a></p>
+<h1>Service catalog</h1>
+<p>Services are discoverable records, not grants. A verified record describes capabilities and a workspace binding; every action still requires an explicit, environment-bound policy decision.</p>
+<p class="notice" id="selector" role="status" aria-live="polite"></p>
+<section class="catalog" aria-label="Available services">
+<article class="service"><h2>id-worker</h2><dl><dt>Type</dt><dd>identity gateway</dd><dt>Capabilities</dt><dd>delegated access, MCP, OAuth discovery, signed webhook intake</dd><dt>Workspace</dt><dd><code>workspace://drksci/id</code></dd><dt>Verification</dt><dd class="state" data-state="verified">verified repository binding</dd></dl><p class="feedback"><a href="/feedback/?action=catalog-id-worker">Could this run smoother? What were you trying to do?</a></p></article>
+<article class="service"><h2>id-data</h2><dl><dt>Type</dt><dd>durable policy mirror</dd><dt>Capabilities</dt><dd>D1 live state, audit outbox, durable repository mirror</dd><dt>Workspace</dt><dd><code>workspace://drksci/id</code></dd><dt>Verification</dt><dd class="state" data-state="pending">pending deployment verification</dd></dl><p class="feedback"><a href="/feedback/?action=catalog-id-data">Could this run smoother? What were you trying to do?</a></p></article>
+<article class="service"><h2>workspace child services</h2><dl><dt>Type</dt><dd>nested workspace endpoint</dd><dt>Capabilities</dt><dd>scoped UI/API selection after verified binding</dd><dt>Workspace</dt><dd><code>&lt;child&gt;.&lt;parent&gt;.id.drksci.com</code></dd><dt>Verification</dt><dd class="state" data-state="unverified">unverified until onboarding and DNS checks complete</dd></dl><p class="feedback"><a href="/feedback/?action=catalog-workspace-child">Could this run smoother? What were you trying to do?</a></p></article>
+</section>
+<h2>Discovery and onboarding</h2>
+<p>Agents may discover this page from <code>/.well-known/agent-access.json</code> or MCP metadata. Auto-discovery can mark a new service <strong>pending</strong> while it checks repository, workspace parent, environment, and DNS CNAME/TXT evidence. Pending records do not issue grants. Use <a href="/onboarding/">first-touch onboarding</a> to request provider setup with explicit human approval.</p>
+<p><a href="/feedback/?action=catalog">Could this run smoother? What were you trying to do?</a> · <a href="/.well-known/agent-access.json">machine discovery</a> · <a href="/carte/">carte</a></p>
+</main>
+<script>
+(() => {
+  const params = new URLSearchParams(window.location.search);
+  const workspace = (params.get("workspace") || "").replace(/[^a-z0-9.-]/gi, "").slice(0, 180);
+  document.querySelector("#selector").textContent = workspace ? `Viewing the requested workspace selector: ${workspace}. This selector does not grant access.` : "Viewing the verified service catalog. Add ?workspace=... to inspect a selector hint; authority remains in token and policy.";
+})();
+</script>
+</body>
+</html>

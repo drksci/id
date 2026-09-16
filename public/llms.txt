@@ -6,6 +6,9 @@ Start here:
 - Human-readable surface: /
 - Protocol docs: /docs/
 - Rationale: /idea/
+- Service catalog: /catalog/
+- First-touch onboarding: /onboarding/
+- Feedback form: /feedback/
 - Full instructions: /llms-full.txt
 - Machine discovery: /.well-known/agent-access.json
 
@@ -17,6 +20,7 @@ Rules:
 - Push and email notifications never approve requests.
 - Human approval requires the authenticated approval URL.
 - Never put private keys or bearer tokens in a repository or prompt.
+- Could this run smoother? What were you trying to do? Use /feedback/ for a redacted report.
 
 ## Client setup
 
@@ -29,3 +33,24 @@ Rules:
 Use the client's native secret feature when available. Never commit credentials.
 Derive workspace and environment from trusted repository and gateway policy. If
 MCP/OAuth is unavailable, open the authenticated `/ask/{request_id}` URL.
+
+## Feedback contract
+
+The feedback page accepts an action, expected outcome, observed result, message, safe
+reproduction steps, correlation_id, and page_path. It submits only sanitized values to
+`POST /api/v1/feedback`; it omits secrets, tokens, cookies, credentials, and query strings.
+The `FEEDBACK_ENABLED` deployment flag controls availability. Reports are appended to the
+sanitized `feedback.md` mirror/outbox contract, retried when transient delivery fails, and moved
+to a poison queue for operator review after bounded retries. Agents should submit the smallest
+useful report and keep the correlation ID, never a credential.
+
+## First-touch onboarding
+
+Open `/onboarding/` to review the detected service URL, repository hint, and nested workspace
+selector. The flow covers GitHub App installation, Cloudflare application/domain authorization,
+and DNS CNAME/TXT verification. Provider permissions require one explicit approval card first.
+The server-side provider start flow issues state and PKCE, reuses an existing approved GitHub
+session when available, and accepts only same-origin path return URLs. Local git credential helpers
+are never read or uploaded as bearer secrets. A pending catalog record is non-authoritative until
+repository, parent workspace, environment, and DNS evidence are verified; only then may a bounded
+grant be issued.

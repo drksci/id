@@ -1,0 +1,18 @@
+{
+  "name": "drksci / id",
+  "short_name": "id",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#efede6",
+  "theme_color": "#24231f",
+  "description": "Identity, delegated access, onboarding, and service discovery at the edge of the work.",
+  "icons": [
+    {
+      "src": "/assets/carte-seal.png",
+      "sizes": "1254x1254",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}

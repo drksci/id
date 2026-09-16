@@ -20,5 +20,22 @@
   "workspace_selector": {
     "canonical_host_template": "<child>.<parent>.id.drksci.com",
     "authority": "full_canonical_workspace_chain_in_token_and_policy"
+  },
+  "discovery": {
+    "catalog": "https://id.drksci.com/catalog/",
+    "onboarding": "https://id.drksci.com/onboarding/",
+    "feedback": "https://id.drksci.com/feedback/",
+    "feedback_endpoint": "https://id.drksci.com/api/v1/feedback",
+    "assistant": "https://id.drksci.com/assist/",
+    "assistant_enabled_flag": "ASSISTANT_ENABLED",
+    "assistant_optional_binding": "AI",
+    "assistant_authority": "suggestions_only; no grant or policy mutation",
+    "feedback_prompt": "Could this run smoother? What were you trying to do?",
+    "feedback_enabled_flag": "FEEDBACK_ENABLED",
+    "pwa_manifest": "https://id.drksci.com/manifest.webmanifest",
+    "service_worker": "https://id.drksci.com/sw.js",
+    "offline_feedback_handoff": true,
+    "onboarding_requires_explicit_provider_approval": true,
+    "safe_return_url_policy": "same_origin_path_only"
   }
 }

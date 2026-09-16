@@ -95,6 +95,25 @@ requires a delivery store with an atomic `claim(delivery_id)` method. The handle
 not imported by `src/runtime.js` in this slice; route wiring must preserve the raw request body,
 provide the deployment-owned allowlists, and pass a D1-backed deduplication store.
 
+## Feedback, onboarding, and catalog
+
+The static `/feedback/` page asks, “Could this run smoother? What were you trying to do?” and sends
+only sanitized action context, expected outcome, observed result, safe reproduction steps,
+`correlation_id`, and path-only `page_path` to `POST /api/v1/feedback` with browser credentials
+omitted. `FEEDBACK_ENABLED` is an explicit deployment flag in each Wrangler environment; when
+false, the endpoint must fail closed. The sanitized mirror/outbox format and bounded retry/poison
+handling are defined in the repository-root [`feedback.md`](../feedback.md). Do not place secrets,
+tokens, cookies, authorization headers, query strings, or local git credential-helper contents in a
+report.
+
+The `/onboarding/` page is a first-touch guide for GitHub App installation, Cloudflare
+application/domain authorization, and DNS CNAME/TXT verification. It may display service URL and
+repository hints, but a single explicit approval is required before any provider permission opens.
+The server-side start flow owns state and PKCE, reuses an existing approved GitHub session when
+available, and accepts same-origin path return URLs only. The `/catalog/` page describes service
+types, capabilities, parent-child workspace bindings, and `verified`, `pending`, `unverified`, or
+`disabled` states. Pending onboarding is descriptive and never grants access.
+
 ## Deployment commands
 
 Run these from the repository root after the worker entrypoint exists and the four D1 variables are

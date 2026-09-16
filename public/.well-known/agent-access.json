@@ -9,6 +9,12 @@
     "human": "/",
     "docs": "/docs/",
     "idea": "/idea/",
+    "catalog": "/catalog/",
+    "onboarding": "/onboarding/",
+    "feedback": "/feedback/",
+    "assistant": "/assist/",
+    "pwa_manifest": "/manifest.webmanifest",
+    "service_worker": "/sw.js",
     "llms": "/llms.txt",
     "full_instructions": "/llms-full.txt",
     "mcp": "/.well-known/mcp.json",
@@ -20,6 +26,44 @@
     "path": "/api/v1/access-requests",
     "authentication": ["short-lived-agent-token", "cloudflare-access"],
     "required": ["actor_id", "resource", "actions", "environment", "expires_at"]
+  },
+  "feedback": {
+    "enabled_flag": "FEEDBACK_ENABLED",
+    "page": "/feedback/",
+    "submit": {
+      "method": "POST",
+      "path": "/api/v1/feedback",
+      "fields": ["action", "expected_outcome", "observed_result", "message", "reproduction_steps", "correlation_id", "page_path"],
+      "privacy": "omit secrets, tokens, cookies, credentials, and query strings; sanitize before mirror or outbox"
+    },
+    "prompt": "Could this run smoother? What were you trying to do?"
+  },
+  "onboarding": {
+    "page": "/onboarding/",
+    "steps": ["github_app_installation", "cloudflare_application_authorization", "dns_cname_txt_verification"],
+    "approval_required_before_provider_permissions": true,
+    "return_url_policy": "same_origin_path_only",
+    "oauth_flow": "server_issued_state_and_pkce; reuse_existing_approved_github_session_when_available",
+    "local_git_credentials": "never_read_or_uploaded_as_bearer_secrets"
+  },
+  "catalog": {
+    "page": "/catalog/",
+    "verification_states": ["verified", "pending", "unverified", "disabled"],
+    "pending_onboarding_is_non_authoritative": true,
+    "workspace_parent_child_template": "<child>.<parent>.id.drksci.com"
+  },
+  "pwa": {
+    "manifest": "/manifest.webmanifest",
+    "service_worker": "/sw.js",
+    "offline_feedback_handoff": true,
+    "stored_feedback_must_be_sanitized": true
+  },
+  "assistant": {
+    "page": "/assist/",
+    "enabled_flag": "ASSISTANT_ENABLED",
+    "optional_cloudflare_ai_binding": "AI",
+    "fallback": "deterministic_local_recipe_suggestions",
+    "authority": "suggestions_only;_apply_requires_separate_authorized_action"
   },
   "approval": {
     "path": "/approve/{request_id}",

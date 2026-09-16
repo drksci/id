@@ -1,0 +1,84 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="theme-color" content="#24231f">
+<link rel="manifest" href="/manifest.webmanifest">
+<script src="/install.js" defer></script>
+<title>drksci / id — onboarding</title>
+<style>
+:root{color-scheme:light}*{box-sizing:border-box}body{margin:0;padding:2rem 1.25rem;background:#efede6;color:#24231f;font:15px/1.6 ui-monospace,SFMono-Regular,Menlo,monospace}main{max-width:46rem;margin:auto}a{color:#24231f}.back{color:#68675f}h1{margin:2rem 0 .5rem;font:2rem/1.1 "Comic Sans MS","Bradley Hand",cursive;font-weight:500;letter-spacing:.06em}h2{margin:2rem 0 .5rem;font-size:1rem}p,li{max-width:42rem;color:#68675f}ol{padding-left:1.5rem}li{margin:.65rem 0}.context,.approval{border:1px solid #68675f;background:#f8f6f0;padding:1rem;margin:1rem 0}dl{display:grid;grid-template-columns:max-content 1fr;gap:.4rem .9rem;font-size:.9rem}dt{color:#68675f}dd{margin:0;overflow-wrap:anywhere}.approval label{display:flex;gap:.7rem;align-items:flex-start;color:#24231f}.approval input{margin-top:.35rem;accent-color:#24231f}.actions{display:flex;flex-wrap:wrap;gap:.7rem;margin-top:1rem}button{font:inherit;border:1px solid #24231f;border-radius:.3rem;background:#24231f;color:#efede6;padding:.65rem .9rem;cursor:pointer}button:disabled{opacity:.45;cursor:not-allowed}.status{min-height:1.5em;color:#24231f}code{font-size:.9em}@media(prefers-reduced-motion:reduce){*{scroll-behavior:auto!important;transition:none!important}}
+</style>
+</head>
+<body>
+<main>
+<p><a class="back" href="/">drksci / id</a></p>
+<h1>First-touch onboarding</h1>
+<p>Review the detected context, then approve one provider setup at a time. This page never grants access by itself. A server-side start flow must create state and PKCE, reuse an existing approved GitHub session when available, and return to this same origin.</p>
+<section class="context" aria-labelledby="context-title">
+<h2 id="context-title">Detected context</h2>
+<dl><dt>Service URL</dt><dd id="service-url"></dd><dt>Repository hint</dt><dd id="repository"></dd><dt>Workspace selector</dt><dd id="workspace"></dd><dt>Safe return path</dt><dd id="return-path"></dd></dl>
+</section>
+<h2>Provider steps</h2>
+<ol>
+<li><strong>GitHub App installation request.</strong> Verify the repository and requested least-privilege permissions. If an approved GitHub session exists, reuse it; otherwise the provider login starts with state and PKCE.</li>
+<li><strong>Cloudflare application and domain authorization.</strong> Confirm the exact hostname and environment before authorizing Access, WAF, or Worker routing.</li>
+<li><strong>DNS verification.</strong> Add only the provider-issued CNAME or TXT record in a zone you control. The canonical nested workspace form is <code>&lt;child&gt;.&lt;parent&gt;.id.drksci.com</code>; hostnames select a workspace but never grant authority.</li>
+</ol>
+<section class="approval" aria-labelledby="approval-title">
+<h2 id="approval-title">Approve provider setup</h2>
+<label><input id="approve" type="checkbox"> <span>I reviewed the repository, service URL, workspace, and requested provider step. I explicitly approve opening a provider setup flow.</span></label>
+<div class="actions"><button type="button" data-provider="github" disabled>Open GitHub App setup</button><button type="button" data-provider="cloudflare" disabled>Open Cloudflare setup</button><button type="button" data-provider="dns" disabled>Open DNS verification</button></div>
+<p id="provider-links" hidden>Approved provider links: <a id="github-repo" rel="noreferrer noopener" target="_blank">repository setup</a> · <a id="github-app" rel="noreferrer noopener" target="_blank">GitHub App installation</a> · <a id="cloudflare-dashboard" rel="noreferrer noopener" target="_blank">Cloudflare dashboard</a> · <a id="deploy-workflow" rel="noreferrer noopener" target="_blank">deploy workflow</a>.</p>
+<p id="status" class="status" role="status" aria-live="polite">No provider flow is open.</p>
+</section>
+<p>Local git credential helpers are never uploaded or read as bearer secrets. The agent may inspect a remote URL to supply a repository hint, but provider credentials stay in the provider session or native secret store.</p>
+<p>After verification, the gateway issues only a bounded grant for the declared repository, workspace chain, actions, and environment. Cross-workspace access still requires an explicit grant.</p>
+<p><a href="/feedback/?action=onboarding">Could this run smoother? What were you trying to do?</a> · <a href="/.well-known/agent-access.json">machine discovery</a></p>
+</main>
+<script>
+(() => {
+  const DEFAULT_RETURN_PATH = "/onboarding/";
+  const params = new URLSearchParams(window.location.search);
+  const safePath = (value) => { const candidate = String(value || ""); return candidate.startsWith("/") && !candidate.startsWith("//") && !/[\u0000-\u001f]/.test(candidate) ? candidate : DEFAULT_RETURN_PATH; };
+  const safeText = (value, fallback) => String(value || fallback).replace(/[\u0000-\u001f\u007f]/g, "").slice(0, 240);
+  const serviceUrl = (() => { try { const value = params.get("service_url"); const parsed = value ? new URL(value, window.location.origin) : new URL(window.location.origin); return parsed.protocol === "https:" || parsed.origin === window.location.origin ? parsed.origin : window.location.origin; } catch (_) { return window.location.origin; } })();
+  const repository = safeText(params.get("repo"), "not supplied; verify the local git remote");
+  const workspace = safeText(params.get("workspace"), "derive from the verified repository binding");
+  const returnPath = safePath(params.get("return_to"));
+  const providerUrls = {
+    githubRepo: "https://github.com/drksci/id",
+    githubApp: "https://github.com/apps/drksci-id-worker/installations/new",
+    cloudflareDashboard: "https://dash.cloudflare.com/",
+    deployWorkflow: "https://github.com/drksci/id/actions/workflows/deploy-id-worker.yml"
+  };
+  document.querySelector("#service-url").textContent = serviceUrl;
+  document.querySelector("#repository").textContent = repository;
+  document.querySelector("#workspace").textContent = workspace;
+  document.querySelector("#return-path").textContent = returnPath;
+  const approval = document.querySelector("#approve");
+  const status = document.querySelector("#status");
+  const buttons = [...document.querySelectorAll("[data-provider]")];
+  approval.addEventListener("change", () => {
+    buttons.forEach((button) => { button.disabled = !approval.checked; });
+    document.querySelector("#provider-links").hidden = !approval.checked;
+    if (approval.checked) {
+      document.querySelector("#github-repo").href = providerUrls.githubRepo;
+      document.querySelector("#github-app").href = providerUrls.githubApp;
+      document.querySelector("#cloudflare-dashboard").href = providerUrls.cloudflareDashboard;
+      document.querySelector("#deploy-workflow").href = providerUrls.deployWorkflow;
+    }
+    status.textContent = approval.checked ? "Provider setup is ready to open." : "No provider flow is open.";
+  });
+  buttons.forEach((button) => button.addEventListener("click", () => {
+    if (!approval.checked) return;
+    const provider = encodeURIComponent(button.dataset.provider);
+    const target = `/onboarding/start?provider=${provider}&return_to=${encodeURIComponent(returnPath)}&repo=${encodeURIComponent(repository)}`;
+    status.textContent = `Opening the approved ${button.dataset.provider} setup flow.`;
+    window.location.assign(target);
+  }));
+})();
+</script>
+</body>
+</html>

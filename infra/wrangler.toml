@@ -18,6 +18,8 @@ run_worker_first = ["/api/*", "/healthz", "/readyz", "/approve/*"]
 
 [vars]
 APP_ENV = "prod"
+FEEDBACK_ENABLED = "true"
+ASSISTANT_ENABLED = "true"
 WORKSPACE = "workspace://drksci/id/prod"
 RESOURCE = "github:drksci/id"
 PUBLIC_ISSUER = "https://id.drksci.com"
@@ -40,6 +42,8 @@ preview_urls = false
 
 [env.prod.vars]
 APP_ENV = "prod"
+FEEDBACK_ENABLED = "true"
+ASSISTANT_ENABLED = "true"
 WORKSPACE = "workspace://drksci/id/prod"
 RESOURCE = "github:drksci/id"
 PUBLIC_ISSUER = "https://id.drksci.com"
@@ -62,6 +66,8 @@ preview_urls = false
 
 [env.dev.vars]
 APP_ENV = "dev"
+FEEDBACK_ENABLED = "true"
+ASSISTANT_ENABLED = "true"
 WORKSPACE = "workspace://drksci/id/dev"
 RESOURCE = "github:drksci/id"
 PUBLIC_ISSUER = "https://dev.id.drksci.com"
@@ -84,6 +90,8 @@ preview_urls = false
 
 [env.test.vars]
 APP_ENV = "test"
+FEEDBACK_ENABLED = "true"
+ASSISTANT_ENABLED = "true"
 WORKSPACE = "workspace://drksci/id/test"
 RESOURCE = "github:drksci/id"
 PUBLIC_ISSUER = "https://test.id.drksci.com"
@@ -106,6 +114,8 @@ preview_urls = true
 
 [env.preview.vars]
 APP_ENV = "preview"
+FEEDBACK_ENABLED = "true"
+ASSISTANT_ENABLED = "true"
 WORKSPACE = "workspace://drksci/id/preview"
 RESOURCE = "github:drksci/id"
 PUBLIC_ISSUER = "https://id-preview.drksci.com"
