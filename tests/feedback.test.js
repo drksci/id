@@ -6,6 +6,7 @@ import {
   SERVICE_VERIFICATION,
   SUBJECT_KIND,
   getFeedback,
+  analyzeFeedback,
   getOnboardingRequest,
   getService,
   handleRequest,
@@ -29,6 +30,8 @@ class Store {
   async createFeedback(record) { this.feedback.set(record.feedback_id, record); }
   async createFeedbackWithIdempotency(record, response) { await this.createFeedback(record); await this.putIdempotency(record.actor_subject_hash, record.idempotency_key, response); this.outbox.push({ feedback_id: record.feedback_id, status: "pending" }); }
   async getFeedback(id) { return this.feedback.get(id) || null; }
+  async createFeedbackSuggestion(record) { this.suggestions = this.suggestions || new Map(); this.suggestions.set(record.feedback_id, record); }
+  async getFeedbackSuggestions(id) { return this.suggestions?.get(id) || null; }
   async createOnboarding(record) { this.onboarding.set(record.request_id, record); }
   async createOnboardingWithIdempotency(record, response) { await this.createOnboarding(record); await this.putIdempotency(record.actor_subject_hash, record.idempotency_key, response); }
   async getOnboarding(id) { return this.onboarding.get(id) || null; }
@@ -63,6 +66,16 @@ test("feedback read is limited to its actor or an approver", async () => {
   const visible = await getFeedback({ feedbackId: response.feedback_id, subject: human, store, policy, now: NOW, env: { FEEDBACK_ENABLED: true } });
   assert.equal(visible.feedback_id, response.feedback_id);
   await assert.rejects(() => getFeedback({ feedbackId: response.feedback_id, subject: { ...agent, sub: "agent://other" }, store, policy, now: NOW, env: { FEEDBACK_ENABLED: true } }), (error) => error.code === "forbidden");
+});
+
+test("assistant analysis is feature gated, linked to correlation, and never proposes an applied policy", async () => {
+  const store = new Store();
+  const feedback = await submitFeedback({ subject: agent, feedback: feedbackInput({ idempotency_key: "assistant-feedback" }), store, policy, now: NOW, env: { FEEDBACK_ENABLED: true }, randomId: () => "feedback_assistant_123456789" });
+  await assert.rejects(() => analyzeFeedback({ feedbackId: feedback.feedback_id, subject: agent, store, policy, now: NOW, env: {} }), (error) => error.code === "feature_disabled");
+  const result = await analyzeFeedback({ feedbackId: feedback.feedback_id, subject: agent, store, policy, now: NOW, env: { ASSISTANT_ENABLED: true }, correlationId: "corr-linked" });
+  assert.equal(result.correlation_id, "corr-linked");
+  assert.equal(result.proposed_policy_diff.apply, false);
+  assert.ok(result.suggestions.length > 0);
 });
 
 test("onboarding creates an explicit pending challenge, supports authoritative DNS verification, and rejects credential URLs", async () => {
