@@ -102,13 +102,16 @@ provide the deployment-owned allowlists, and pass a D1-backed deduplication stor
 ## Feedback, onboarding, and catalog
 
 The static `/feedback/` page asks, “Could this run smoother? What were you trying to do?” and sends
-only sanitized action context, expected outcome, observed result, safe reproduction steps,
-`correlation_id`, and path-only `page_path` to `POST /api/v1/feedback` with browser credentials
-omitted. `FEEDBACK_ENABLED` is an explicit deployment flag in each Wrangler environment; when
-false, the endpoint must fail closed. The sanitized mirror/outbox format and bounded retry/poison
-handling are defined in the repository-root [`feedback.md`](../feedback.md). Do not place secrets,
-tokens, cookies, authorization headers, query strings, or local git credential-helper contents in a
-report.
+sanitized action context to `POST /api/v1/feedback` with browser credentials omitted.
+`FEEDBACK_ENABLED` is an explicit deployment flag in each Wrangler environment; when false, the
+endpoint must fail closed. The endpoint contract is defined in the repository-root
+[`feedback.md`](../feedback.md), which also records what is not built.
+
+Two gaps are worth stating plainly rather than implying otherwise. The endpoint authenticates its
+caller, so the public page — which sends no credentials — cannot currently submit. And there is no
+repository mirror, no outbox drainer, and no retry or poison handling: `feedback_outbox` rows are
+written with the status `pending` and nothing transitions them. Do not place secrets, tokens,
+cookies, authorization headers, query strings, or local git credential-helper contents in a report.
 
 The `/onboarding/` page is a first-touch guide for GitHub App installation, Cloudflare
 application/domain authorization, and DNS CNAME/TXT verification. It may display service URL and
