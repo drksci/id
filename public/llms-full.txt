@@ -1,0 +1,119 @@
+# drksci / id protocol notes
+
+The id.drksci.com surface describes identity cards, delegated grants, and human approval. Enforcement belongs to the authenticated gateway.
+
+## Request flow
+
+1. An agent presents its stable identifier and public key.
+2. It requests a resource, actions, environment, and expiry.
+3. The registered parent may approve within its delegated scope.
+4. Otherwise the request bubbles to the parent chain.
+5. The human operator receives a notification and opens the approval URL.
+6. The operator authenticates with Cloudflare Access and approves or declines the exact request.
+7. The gateway issues a short-lived grant and records its decision.
+
+A child grant is the intersection of parent authority, policy, and requested scope. It cannot outlive its parent.
+
+## Environments
+
+Use `local`, `dev`, `preview`, `staging`, or `production`. An omitted or unknown environment is treated as production policy.
+
+## Notifications
+
+Web Push may be implemented with VAPID. The single `id-worker` Worker may use a Durable Object for subscriptions and delivery. Production configuration requires `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`, and `VAPID_SUBJECT` in the secret store.
+
+The fallback is a Cloudflare Access protected approval URL with operator OTP. The notification is never an authorization artifact. Tapping a notification only opens the approval page; it cannot approve, grant, or revoke anything.
+
+Local development has no secret requirement. Without a configured gateway, the static pages provide discovery and examples only.
+
+## Client setup
+
+Coding agents should read repository-local `AGENTS.md`, `CLAUDE.md`, and Cursor
+rules before acting. These files guide discovery; the gateway remains the
+authority.
+
+MCP-capable desktop clients connect to `https://id.drksci.com/mcp`. They first
+fetch `/.well-known/oauth-protected-resource`, then
+`/.well-known/oauth-authorization-server`, and use the resulting OAuth
+metadata. The token must identify the agent Carte ID and be audience-bound to
+the MCP resource.
+
+Local stdio clients use the native OS keychain or environment injection. GitHub
+Actions use OIDC plus repository or environment secrets. Cloudflare Workers use
+Wrangler secrets and bindings. Each client should use its own native secret
+feature when available. Credentials must never be committed, placed in prompts,
+or written to logs.
+
+Workspace and environment come from the trusted `.id.drksci` repository
+binding and gateway policy. A client must not promote a caller-supplied value
+over that policy. When a client lacks MCP or OAuth support, it should print or
+open the authenticated `https://id.drksci.com/ask/{request_id}` URL. That URL
+is a request and approval interface; opening or receiving it does not approve
+anything.
+
+## Human passkey step-up
+
+Keep Cloudflare Access or the configured IdP as the primary human sign-in, with
+OTP as recovery. After an authenticated operator session, enroll a WebAuthn
+credential with `navigator.credentials.create()` and use
+`navigator.credentials.get()` for high-risk approvals. Bind the relying-party
+ID to `id.drksci.com` and verify the exact HTTPS origin, challenge, user,
+origin, RP ID, and signature server-side. Chrome desktop/Android passkeys and
+phone QR handoff are supported by the browser; the service stores only the
+credential ID and public key, never a raw passkey or private key. Revoke a
+credential by ID and provide authenticated recovery through Access/IdP and OTP.
+
+## Workspace-qualified email aliases
+
+`codex@plane.id.drksci.com` is an exact verified routing selector for the
+`plane` workspace. It is not identity or authority. `codex@id.drksci.com` is
+global only through an explicit alias mapping. Never trust From, Reply-To, or
+email text alone: verify signed Agentmail metadata and the actor's active
+grant. Auto-accept only bounded non-production requests under workspace policy.
+Unknown or expired aliases reject. Environment prefixes are policy hints;
+missing environment means production policy.
+
+## Client setup and recovery
+
+Coding agents read `AGENTS.md`, `CLAUDE.md`, and Cursor rules. MCP clients use
+`https://id.drksci.com/mcp` and discover
+`/.well-known/oauth-protected-resource` followed by
+`/.well-known/oauth-authorization-server`. Local stdio clients use the native
+OS keychain or environment injection. GitHub Actions use OIDC and
+repository/environment secrets. Cloudflare Workers use Wrangler secrets and
+bindings. Use each client's native secret facility, never commit credentials,
+and derive workspace/environment from trusted repository and gateway policy.
+If MCP/OAuth is unavailable, print or open the authenticated
+`/ask/{request_id}` URL. Back up durable policy and audit through the
+`drksci/id-data` Git mirror; D1 remains live state and the transactional outbox
+must be replayable after recovery.
+
+## Pre-mortem and KISS defaults
+
+Assume the first deployment failed. Check these likely causes:
+
+- Aliases were treated as auth, a workspace/domain was not registered, or an
+  alias was recycled. Use exact verified selectors, signed Agentmail metadata,
+  active grants, and a reserved-subdomain registry.
+- An email scanner consumed a one-time link, an environment was mismatched, or
+  no environment was supplied. Use short-lived single-use links, show the
+  target environment, and treat missing environment as production.
+- A parent chain cycled or a token survived revocation and clock skew. Detect
+  cycles, use bounded expiries with clock tolerance, check revocation at the
+  gateway, and fail closed.
+- Webhooks arrived twice or out of order, or a direct origin bypassed the edge.
+  Verify signatures, event IDs, ordering/version, and expose no alternate
+  origin route.
+- OAuth callback and Access boundaries were confused, passkey RP/origin was
+  wrong, or push subscriptions went stale. Bind callbacks and passkeys to the
+  exact host/origin, require authenticated step-up, remove stale subscriptions,
+  and never let notification delivery approve.
+- D1 and Git mirror lag, GitHub User-vs-Org permissions, provider plan limits,
+  Paperclip's lack of local provisioning, or broken backups caused surprises.
+  Keep D1 authoritative for live decisions, record mirror lag, scope the GitHub
+  App to actual provider capabilities, configure Paperclip credentials through
+  its supported path, and test restore of `id-data`.
+
+The default is one Worker, one live authorization store, one durable mirror,
+short-lived grants, explicit environments, native secret storage, and
+fail-closed behavior whenever a dependency or verification step is unavailable.

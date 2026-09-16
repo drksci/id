@@ -1,0 +1,39 @@
+name: GitHub App webhook detector
+
+on:
+  repository_dispatch:
+    types:
+      - github-app-webhook
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: github-app-webhook-detector
+  cancel-in-progress: false
+
+jobs:
+  detect:
+    name: Verify webhook delivery signal
+    runs-on: ubuntu-latest
+    steps:
+      - name: Inspect delivery metadata
+        env:
+          EVENT_ACTION: ${{ github.event.action }}
+          DELIVERY_ID: ${{ github.event.client_payload.delivery_id }}
+          EVENT_NAME: ${{ github.event.client_payload.event }}
+          SOURCE_REPOSITORY: ${{ github.event.client_payload.repository.full_name }}
+        run: |
+          test -n "$DELIVERY_ID" || { echo "missing delivery_id" >&2; exit 1; }
+          test -n "$EVENT_NAME" || { echo "missing event" >&2; exit 1; }
+          test "$SOURCE_REPOSITORY" = "drksci/id" || {
+            echo "unexpected repository: $SOURCE_REPOSITORY" >&2
+            exit 1
+          }
+          echo "Detected $EVENT_NAME delivery $DELIVERY_ID (action: ${EVENT_ACTION:-none})"
+
+      - name: Record detector contract
+        run: |
+          echo "The id-worker webhook endpoint must verify X-Hub-Signature-256 and deduplicate delivery IDs."
+          echo "This workflow does not receive or store the GitHub App private key or webhook secret."

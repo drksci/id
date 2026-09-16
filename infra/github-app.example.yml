@@ -1,0 +1,31 @@
+# GitHub App metadata template for the id-worker webhook receiver.
+# Configure the App in GitHub's operator UI. This file contains no private key or secret.
+
+name: drksci-id-worker
+slug: drksci-id-worker
+description: GitHub App integration for delegated-access events in drksci/id.
+homepage_url: https://id.drksci.com/
+request_oauth_on_install: false
+webhook:
+  url: https://id.drksci.com/api/v1/github/webhook
+  secret_ref: GITHUB_WEBHOOK_SECRET
+  content_type: json
+  insecure_ssl: false
+  events:
+    - installation
+    - installation_repositories
+    - repository
+    - workflow_run
+permissions:
+  metadata: read
+  contents: read
+  actions: read
+  issues: read
+  pull_requests: read
+  checks: read
+  deployments: read
+  statuses: read
+environments:
+  allowed_repositories:
+    - drksci/id
+    - drksci/id-data

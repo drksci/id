@@ -1,0 +1,31 @@
+# drksci / id
+
+Identity and delegated-access discovery for humans, agents, temporary agents, and services.
+
+Start here:
+- Human-readable surface: /
+- Protocol docs: /docs/
+- Rationale: /idea/
+- Full instructions: /llms-full.txt
+- Machine discovery: /.well-known/agent-access.json
+
+Rules:
+- Email is a routing alias, never authority.
+- Request the smallest scope and shortest expiry.
+- Missing environment uses production policy.
+- Child agents receive only explicitly delegated permissions.
+- Push and email notifications never approve requests.
+- Human approval requires the authenticated approval URL.
+- Never put private keys or bearer tokens in a repository or prompt.
+
+## Client setup
+
+- Coding agents read `AGENTS.md`, `CLAUDE.md`, and Cursor rules before acting.
+- MCP-capable clients use `https://id.drksci.com/mcp` and discover OAuth through `/.well-known/oauth-protected-resource` and `/.well-known/oauth-authorization-server`.
+- Local stdio clients use the native OS keychain or environment injection.
+- GitHub Actions use OIDC plus repository/environment secrets.
+- Cloudflare Workers use Wrangler secrets and bindings.
+
+Use the client's native secret feature when available. Never commit credentials.
+Derive workspace and environment from trusted repository and gateway policy. If
+MCP/OAuth is unavailable, open the authenticated `/ask/{request_id}` URL.

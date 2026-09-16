@@ -1,0 +1,27 @@
+{
+  "issuer": "https://id.drksci.com",
+  "name": "drksci / id",
+  "runtime": "id-worker",
+  "repository": "drksci/id",
+  "durable_repository": "drksci/id-data",
+  "protocol": "delegated-access",
+  "discovery": {
+    "human": "/",
+    "docs": "/docs/",
+    "idea": "/idea/",
+    "llms": "/llms.txt",
+    "full_instructions": "/llms-full.txt"
+  },
+  "request": {
+    "method": "POST",
+    "path": "/api/v1/access-requests",
+    "authentication": ["short-lived-agent-token", "cloudflare-access"],
+    "required": ["actor_id", "resource", "actions", "environment", "expires_at"]
+  },
+  "approval": {
+    "path": "/approve/{request_id}",
+    "requires_authenticated_human": true,
+    "notifications_are_non_authoritative": true
+  },
+  "environments": ["local", "dev", "preview", "staging", "production"]
+}

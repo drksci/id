@@ -1,0 +1,8 @@
+{
+  "name": "id-worker",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node --test tests/runtime.test.js"
+  }
+}

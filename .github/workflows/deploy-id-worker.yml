@@ -1,0 +1,74 @@
+name: Deploy id-worker
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: Worker environment to deploy
+        required: true
+        type: choice
+        options:
+          - dev
+          - test
+          - preview
+          - prod
+  push:
+    branches:
+      - main
+    paths:
+      - infra/wrangler.toml
+      - src/**
+      - migrations/**
+      - package.json
+      - package-lock.json
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: id-worker-${{ github.event.inputs.environment || 'prod' }}
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: Deploy ${{ github.event.inputs.environment || 'prod' }}
+    if: ${{ hashFiles('src/runtime.js') != '' }}
+    runs-on: ubuntu-latest
+    environment:
+      name: ${{ github.event.inputs.environment || 'prod' }}
+    env:
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js for Wrangler
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Validate deployment inputs
+        run: |
+          test -f src/runtime.js
+          test -d public
+          test -f infra/wrangler.toml
+
+      - name: Run runtime tests
+        run: npm test
+
+      - name: Deploy selected environment
+        env:
+          DEPLOY_ENVIRONMENT: ${{ github.event.inputs.environment }}
+        run: |
+          cd infra
+          if [ -n "$DEPLOY_ENVIRONMENT" ]; then
+            npx --yes wrangler@4 deploy --env "$DEPLOY_ENVIRONMENT"
+          else
+            npx --yes wrangler@4 deploy --env prod
+          fi
+
+      - name: Check public readiness
+        if: ${{ github.event.inputs.environment == 'prod' || github.event.inputs.environment == '' }}
+        run: curl --fail --silent --show-error --retry 3 https://id.drksci.com/readyz
