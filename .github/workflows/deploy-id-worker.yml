@@ -12,20 +12,15 @@ on:
           - test
           - preview
           - prod
+  # Deployment is keyed to a version tag, not to a push. A merge to main means "this is good", and
+  # a tag means "this is a release" - collapsing the two is how a hotfix becomes indistinguishable
+  # from an experiment, and how a rollback loses its target.
   push:
-    branches:
-      - main
-    paths:
-      - infra/wrangler.toml
-      - infra/render-wrangler-config.py
-      - src/**
-      - migrations/**
-      - package.json
-      - package-lock.json
-      - public/**
+    tags:
+      - 'v[0-9]+.[0-9]+.[0-9]+'
 
 permissions:
-  contents: read
+  contents: write   # the release record is created here
   id-token: write
 
 concurrency:
@@ -48,6 +43,22 @@ jobs:
     steps:
       - name: Check out source
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0   # the tag has to be checked against main's history
+
+      # A tag is a claim that this commit was reviewed. Verify the claim rather than trusting it,
+      # so that tagging a feature branch cannot ship it.
+      - name: Refuse a tag that is not on the default branch
+        if: ${{ startsWith(github.ref, 'refs/tags/v') }}
+        run: |
+          git fetch --no-tags origin main
+          if git merge-base --is-ancestor "${GITHUB_SHA}" origin/main; then
+            echo "$GITHUB_REF_NAME names a commit on main"
+          else
+            echo "::error::refusing to deploy $GITHUB_REF_NAME: the tagged commit is not on main"
+            echo "A version tag must name a commit that was reviewed and merged."
+            exit 1
+          fi
 
       - name: Set up Node.js for Wrangler
         uses: actions/setup-node@v4
@@ -96,18 +107,54 @@ jobs:
             --env "$target_environment" --remote
 
       - name: Deploy selected environment
+        id: deploy
         env:
-          DEPLOY_ENVIRONMENT: ${{ github.event.inputs.environment }}
+          DEPLOY_ENVIRONMENT: ${{ github.event.inputs.environment || 'prod' }}
         run: |
-          if [ -n "$DEPLOY_ENVIRONMENT" ]; then
-            npx --yes wrangler@4 deploy --config "${{ steps.render-config.outputs.path }}" --env "$DEPLOY_ENVIRONMENT"
-          else
-            npx --yes wrangler@4 deploy --config "${{ steps.render-config.outputs.path }}" --env prod
+          set +e
+          output="$(npx --yes wrangler@4 deploy --config "${{ steps.render-config.outputs.path }}" --env "$DEPLOY_ENVIRONMENT" 2>&1)"
+          code=$?
+          set -e
+          printf '%s\n' "$output"
+          [ "$code" -eq 0 ] || exit "$code"
+
+          # The Worker version id is the only thing a rollback can target, so it is captured here
+          # rather than reconstructed from a dashboard later.
+          version_id="$(printf '%s' "$output" | grep -oE 'Worker Version ID:[[:space:]]*[0-9a-fA-F-]{36}' | head -1 | grep -oE '[0-9a-fA-F-]{36}' || true)"
+          if [ -z "$version_id" ]; then
+            echo "::warning::could not read the Worker Version ID from the deploy output; the release record will say so rather than leaving a blank"
+            version_id="not-captured"
           fi
+          echo "version_id=$version_id" >> "$GITHUB_OUTPUT"
+
+          {
+            echo "### Deployed \`$DEPLOY_ENVIRONMENT\`"
+            echo ""
+            echo "Worker Version ID: \`$version_id\`"
+          } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Remove rendered deployment config
         if: ${{ always() && steps.render-config.outputs.path != '' }}
         run: rm -f "${{ steps.render-config.outputs.path }}"
+
+      # infra/README.md documents a rollback that redeploys "the pinned version ID from the release
+      # record". Until this step existed, that record was never written.
+      - name: Record the release
+        if: ${{ startsWith(github.ref, 'refs/tags/v') && steps.deploy.outputs.version_id != '' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION_ID: ${{ steps.deploy.outputs.version_id }}
+        run: |
+          tag="${GITHUB_REF_NAME}"
+          notes="$(printf 'Deployed from tag \`%s\`.\n\n**Worker Version ID:** \`%s\`\n\nRoll back by redeploying that Worker version id. Do not roll back schema by deleting data.\n' "$tag" "$VERSION_ID")"
+
+          if gh release view "$tag" >/dev/null 2>&1; then
+            gh release edit "$tag" --notes "$notes"
+            echo "updated the release record for $tag"
+          else
+            gh release create "$tag" --title "$tag" --notes "$notes"
+            echo "created the release record for $tag"
+          fi
 
       - name: Check public readiness
         if: ${{ github.event.inputs.environment == 'prod' || github.event.inputs.environment == '' }}

@@ -166,6 +166,21 @@ Before promoting production, check:
   delivery IDs are harmless.
 - Access approval remains human-authenticated and notifications cannot approve a request.
 
-If a release fails, redeploy the last known-good Worker version using the Cloudflare dashboard or
-the pinned version ID from the release record. Do not roll back D1 schema changes by deleting data;
-use a forward migration or a documented restore procedure approved by the operator.
+### Releasing and rolling back
+
+A release is a version tag, not a merge. Pushing a tag matching `v<major>.<minor>.<patch>` runs
+`Deploy id-worker` against `prod`; a merge to `main` does not deploy. The workflow refuses a tag whose
+commit is not an ancestor of `main`, so a tag cannot be used to ship an unreviewed branch.
+
+Each tagged deploy writes a **GitHub Release** naming the Cloudflare **Worker Version ID**:
+
+```sh
+gh release list -R drksci/id
+gh release view v0.4.0 -R drksci/id
+```
+
+To roll back, redeploy that Worker Version ID from the Cloudflare dashboard. If the id was not
+captured, the release notes say `not-captured` rather than leaving a blank that reads like a pointer.
+
+Do not roll back D1 schema changes by deleting data; use a forward migration or a documented restore
+procedure approved by the operator.
