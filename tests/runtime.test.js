@@ -124,7 +124,7 @@ test("health is public while readiness fails closed without a complete D1 schema
     prepare(sql) {
       return {
         bind() { return this; },
-        async all() { return { results: [{ name: "access_requests" }, { name: "grants" }, { name: "idempotency_keys" }, { name: "identity_backups" }, { name: "revoked_grants" }] }; },
+        async all() { return { results: [{ name: "access_requests" }, { name: "grants" }, { name: "idempotency_keys" }, { name: "identity_backups" }, { name: "revoked_grants" }, { name: "webhook_deliveries" }] }; },
       };
     },
   };

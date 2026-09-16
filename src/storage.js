@@ -17,6 +17,7 @@ const TABLE = Object.freeze({
   BACKUPS: "identity_backups",
   REVOKED: "revoked_grants",
   APPROVERS: "approvers",
+  DELIVERIES: "webhook_deliveries",
 });
 
 function unavailable() { throw new Error("D1 binding unavailable"); }
@@ -168,6 +169,13 @@ export class D1Store {
     return Boolean(row);
   }
 
+  async claimDelivery(deliveryId) {
+    const result = await this.prepare(
+      `INSERT OR IGNORE INTO webhook_deliveries (delivery_id, received_at) VALUES (?, ?)`, deliveryId, new Date().toISOString(),
+    ).run();
+    return Number(result?.meta?.changes || 0) === 1;
+  }
+
   async getActiveGrant(subjectId, resource, environment, now) {
     const row = await this.prepare(
       `SELECT g.* FROM ${TABLE.GRANTS} g WHERE g.subject_id = ? AND g.resource = ? AND g.environment = ? AND g.expires_at > ? AND NOT EXISTS (SELECT 1 FROM ${TABLE.REVOKED} r WHERE r.grant_id = g.grant_id) ORDER BY g.expires_at DESC LIMIT 1`,
@@ -207,9 +215,9 @@ export class D1Store {
   async checkReadiness() {
     if (!this.db || typeof this.db.prepare !== "function") return false;
     try {
-      const result = await this.db.prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name IN ('access_requests', 'grants', 'idempotency_keys', 'identity_backups', 'revoked_grants')").all();
+      const result = await this.db.prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name IN ('access_requests', 'grants', 'idempotency_keys', 'identity_backups', 'revoked_grants', 'webhook_deliveries')").all();
       const names = new Set((result?.results || []).map((row) => row.name));
-      return [TABLE.REQUESTS, TABLE.GRANTS, TABLE.IDEMPOTENCY, TABLE.BACKUPS, TABLE.REVOKED].every((name) => names.has(name));
+      return [TABLE.REQUESTS, TABLE.GRANTS, TABLE.IDEMPOTENCY, TABLE.BACKUPS, TABLE.REVOKED, TABLE.DELIVERIES].every((name) => names.has(name));
     } catch { return false; }
   }
 }

@@ -1,5 +1,6 @@
 import { createD1Store } from "./storage.js";
 import { verifyAccessJwt } from "./auth.js";
+import { handleGitHubWebhook } from "./github-webhook.js";
 
 /**
  * Small, dependency-free authorization primitives for the id-worker.
@@ -200,6 +201,45 @@ function storeForEnv(env) {
   if (env?.STORE) return env.STORE;
   if (env?.DB) return createD1Store(env.DB);
   fail("storage_unavailable", "authorization storage is unavailable");
+}
+
+function envList(value) {
+  if (Array.isArray(value)) return value;
+  if (typeof value !== "string" || value.length === 0) return undefined;
+  try {
+    const parsed = JSON.parse(value);
+    if (Array.isArray(parsed)) return parsed;
+  } catch { /* comma-separated deployment variable */ }
+  return value.split(",").map((item) => item.trim()).filter(Boolean);
+}
+
+function envMap(value) {
+  if (value && typeof value === "object" && !Array.isArray(value)) return value;
+  if (typeof value !== "string" || value.length === 0) return undefined;
+  try {
+    const parsed = JSON.parse(value);
+    return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed : undefined;
+  } catch { return undefined; }
+}
+
+function deliveryStoreForEnv(env) {
+  if (env?.DELIVERY_STORE && typeof env.DELIVERY_STORE.claim === "function") return env.DELIVERY_STORE;
+  if (env?.STORE && typeof env.STORE.claimDelivery === "function") return { claim: (deliveryId) => env.STORE.claimDelivery(deliveryId) };
+  if (env?.DB) {
+    const store = createD1Store(env.DB);
+    if (typeof store.claimDelivery === "function") return { claim: (deliveryId) => store.claimDelivery(deliveryId) };
+  }
+  return undefined;
+}
+
+function githubWebhookOptions(env) {
+  return {
+    secret: env.GITHUB_WEBHOOK_SECRET,
+    allowedRepositories: envList(env.GITHUB_ALLOWED_REPOSITORIES),
+    allowedWorkspaces: envList(env.GITHUB_ALLOWED_WORKSPACES),
+    workspaceByRepository: envMap(env.GITHUB_WORKSPACE_MAP),
+    deliveryStore: deliveryStoreForEnv(env),
+  };
 }
 
 export async function requestAccess({ subject, request, store, policy, now = new Date(), randomId } = {}) {
