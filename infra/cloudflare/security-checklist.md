@@ -25,6 +25,20 @@ plan: no account, zone, hostname, rule ID, or credential is safe to guess in sou
 - [ ] Restrict CORS to approved human approval origins; do not use `*` for credentialed requests.
 - [ ] Enable Security Events logging and retain the event identifier with any release incident.
 
+## DNS and Worker routes
+
+- [ ] With an explicit Cloudflare DNS-write credential, create the proxied (orange-cloud) CNAME
+      `*.id.drksci.com` targeting `id.drksci.com` or the assigned Workers target. Keep the
+      credential outside Git and CI logs; this checklist records an operator action only.
+- [ ] Verify the existing nested workspace route contract for each verified parent. A one-label
+      wildcard does not match `child.parent.id.drksci.com`; provision the required per-parent
+      wildcard CNAME/route and certificate before enabling a nested workspace.
+- [ ] Confirm the wildcard certificate/SAN coverage at every hostname depth, and test both the
+      canonical nested hostname and any explicitly provisioned friendly alias through the proxy.
+- [ ] Treat DNS hostnames and route matches as selectors only. The Worker must continue enforcing
+      the full canonical workspace chain, repository resource, and explicit environment in every
+      token and policy decision.
+
 ## Rate limits
 
 - [ ] Protect `POST /api/v1/access-requests` with per-IP and per-actor rules. Start with a bounded

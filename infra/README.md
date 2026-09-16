@@ -55,8 +55,13 @@ workspace chain and explicit environment.
 Cloudflare DNS wildcards and certificates cover one label depth. `*.id.drksci.com` does not cover
 `child.parent.id.drksci.com`; nested routing needs explicitly provisioned records or managed
 per-parent wildcards such as `*.plane.id.drksci.com`, plus certificates/SANs for each depth. The
-friendly alias uses a separate certificate/DNS record. Keep a registry of reserved labels and
-verified bindings before provisioning any wildcard.
+friendly alias uses a separate certificate/DNS record. For the single-label workspace route,
+provision a proxied CNAME `*.id.drksci.com` targeting `id.drksci.com` or the assigned Workers
+target. The nested workspace route is already part of the checked-in Worker routing contract, but
+each deeper hostname still needs a matching per-parent route, wildcard, and certificate. Creating
+or changing these DNS records requires an explicit Cloudflare DNS-write credential held by the
+operator; no DNS credential or remote record is present in this repository. Keep a registry of
+reserved labels and verified bindings before provisioning any wildcard.
 
 ## First operator setup
 
