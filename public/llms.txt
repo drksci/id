@@ -37,13 +37,50 @@ MCP/OAuth is unavailable, open the authenticated `/ask/{request_id}` URL.
 
 ## Feedback contract
 
-The feedback page accepts an action, expected outcome, observed result, message, safe
-reproduction steps, correlation_id, and page_path. It submits only sanitized values to
-`POST /api/v1/feedback`; it omits secrets, tokens, cookies, credentials, and query strings.
-The `FEEDBACK_ENABLED` deployment flag controls availability. Reports are appended to the
-sanitized `feedback.md` mirror/outbox contract, retried when transient delivery fails, and moved
-to a poison queue for operator review after bounded retries. Agents should submit the smallest
-useful report and keep the correlation ID, never a credential.
+Feedback records are `drksci.id.feedback.v1` and carry two optional structured nodes. `feedback_pre`
+is declared intent: `objective` (required), `objectives`, `constraints`, `expected_outcome`,
+`context`. `feedback_post` is the closing report: `outcome` (required: `achieved`, `partial`,
+`not_achieved`, `blocked`, `unknown`), `observed_result`, `reproduction_steps`, `suggestion`,
+`suggestions` (objects with `kind`, `recommendation`, `confidence`, `evidence`), `follow_ups`. Both
+nodes are allowlisted: unknown keys are rejected, every string is bounded, and known secret shapes
+are redacted. Use this template verbatim and replace the placeholders only:
+
+```json
+{"schema":"drksci.id.feedback.v1","feedback_pre":{"objective":"<one sentence: what you were trying to achieve>","objectives":["<first objective, in order>","<next objective>"],"constraints":["<bound, policy, or non-goal you were working within>"],"expected_outcome":"<what success would have looked like>"},"feedback_post":{"outcome":"achieved|partial|not_achieved|blocked|unknown","observed_result":"<what actually happened>","suggestion":"<the single change that would have helped most>","suggestions":[{"kind":"fix|improvement|documentation|tooling|policy","recommendation":"<specific, actionable change>","confidence":"low|medium|high","evidence":"<bounded, sanitized evidence>"}],"follow_ups":["<open question or next check>"]}}
+```
+
+- `POST /api/v1/feedback` accepts `feedback_pre` and/or `feedback_post` in one call, or the legacy
+  flat fields. Response: `{feedback_id, status, correlation_id, created_at}`.
+- `POST /api/v1/feedback/{feedback_id}/complete` attaches the post node later with
+  `{"feedback_post": { ... }}`. Only the submitting subject may complete its own record (otherwise
+  403 `forbidden`); a second completion is 409 `feedback_already_completed`.
+- MCP tool / JSON-RPC method `complete_feedback`, arguments `{feedback_id, feedback_post}`;
+  `submit_feedback` also accepts `feedback_pre` and `feedback_post`.
+
+Put each value in exactly one place: the flat field or the node that owns it. The same value in both
+places is harmless, but two different values for the same fact fail closed with `invalid_feedback`,
+never a silent winner. A value is never estimated: if neither source supplies it, the request fails.
+
+The feedback page accepts an action, expected outcome, observed result, message, safe reproduction
+steps, correlation_id, and page_path. It submits only sanitized values to `POST /api/v1/feedback`; it
+omits secrets, tokens, cookies, credentials, and query strings. The `FEEDBACK_ENABLED` deployment flag
+controls availability. Reports are appended to the sanitized `feedback.md` mirror/outbox contract,
+retried when transient delivery fails, and moved to a poison queue for operator review after bounded
+retries. Agents should submit the smallest useful report and keep the correlation ID, never a
+credential.
+
+Forwards are Cloudflare-native and email-first: the Worker sends each sanitized record through a
+Cloudflare Email Service `send_email` binding (sender `FEEDBACK_FORWARD_FROM`, optional recipient
+override `FEEDBACK_FORWARD_TO`, default configured address used when the override is unset), with a
+bounded-timeout fallback POST to `FEEDBACK_FORWARD_URL` plus optional `FEEDBACK_FORWARD_TOKEN` when no
+binding is configured. Delivery is attempted once per lifecycle event (submit, and again on
+completion); failures stay in the outbox as `pending` with a safe error code. When nothing is
+configured nothing is forwarded.
+
+Never place credentials, tokens, cookies, authorization headers, query strings, private repository
+data, or tool output in either node. MCP instructions, prompts, and tool results must never be
+included in `feedback_pre` or `feedback_post` and must never carry sensitive data; the nodes hold
+goals, bounds, outcomes, and suggestions only.
 
 ## First-touch onboarding
 

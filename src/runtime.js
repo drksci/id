@@ -39,6 +39,7 @@ export const MCP_METHOD = Object.freeze({
   LIST_SERVICES: "list_services",
   ANALYZE_FEEDBACK: "analyze_feedback",
   GET_FEEDBACK_SUGGESTIONS: "get_feedback_suggestions",
+  COMPLETE_FEEDBACK: "complete_feedback",
 });
 export const MCP_PROTOCOL = Object.freeze({
   INITIALIZE: "initialize",
@@ -60,6 +61,7 @@ export const MCP_TOOL = Object.freeze({
   LIST_SERVICES: "list_services",
   ANALYZE_FEEDBACK: "analyze_feedback",
   GET_FEEDBACK_SUGGESTIONS: "get_feedback_suggestions",
+  COMPLETE_FEEDBACK: "complete_feedback",
 });
 export const MCP_TOOLS = Object.freeze([
   Object.freeze({ name: MCP_TOOL.REGISTER_AGENT, description: "Register an agent public key.", inputSchema: { type: "object", required: ["public_key"], properties: { public_key: { type: "string" } } } }),
@@ -67,13 +69,14 @@ export const MCP_TOOLS = Object.freeze([
   Object.freeze({ name: MCP_TOOL.GET_GRANT, description: "Retrieve the authenticated agent grant.", inputSchema: { type: "object", required: ["grant_id"], properties: { grant_id: { type: "string" } } } }),
   Object.freeze({ name: MCP_TOOL.BACKUP_IDENTITY, description: "Store a client-encrypted identity envelope.", inputSchema: { type: "object", required: ["envelope"], properties: { envelope: { type: "object" } } } }),
   Object.freeze({ name: MCP_TOOL.RESTORE_IDENTITY, description: "Restore an encrypted identity envelope with proof and authorization.", inputSchema: { type: "object", required: ["backup_id", "proof"], properties: { backup_id: { type: "string" }, proof: { type: "object" } } } }),
-  Object.freeze({ name: MCP_TOOL.SUBMIT_FEEDBACK, description: "Submit structured runtime feedback with prompt_id, expected_outcome, observed_result, reproduction_steps, event, action, and context.", inputSchema: { type: "object", required: ["idempotency_key", "correlation_id", "prompt_id", "expected_outcome", "observed_result", "reproduction_steps", "event", "action", "severity", "message"], properties: { idempotency_key: { type: "string" }, correlation_id: { type: "string" }, prompt_id: { type: "string" }, expected_outcome: { type: "string" }, observed_result: { type: "string" }, reproduction_steps: { type: "string" }, event: { type: "string" }, action: { type: "string" }, context: { type: "object" }, severity: { type: "string" }, message: { type: "string" }, workspace: { type: "string" }, environment: { type: "string" }, resource: { type: "string" }, metadata: { type: "object" } } } }),
+  Object.freeze({ name: MCP_TOOL.SUBMIT_FEEDBACK, description: "Submit structured runtime feedback. feedback_pre declares the objective and ordered objectives; feedback_post carries the outcome and suggestions. Never include credentials, prompts, tool output, or private data.", inputSchema: { type: "object", required: ["idempotency_key", "correlation_id", "prompt_id", "event", "action", "severity", "message"], properties: { idempotency_key: { type: "string" }, correlation_id: { type: "string" }, prompt_id: { type: "string" }, event: { type: "string" }, action: { type: "string" }, feedback_pre: { type: "object", description: "Declared intent, written before the work. Allowed keys only; unknown keys are rejected.", properties: { objective: { type: "string" }, objectives: { type: "array", items: { type: "string" } }, constraints: { type: "array", items: { type: "string" } }, expected_outcome: { type: "string" }, context: { type: "object" } } }, feedback_post: { type: "object", description: "Closing report, written after the work.", properties: { outcome: { type: "string", enum: ["achieved", "partial", "not_achieved", "blocked", "unknown"] }, observed_result: { type: "string" }, reproduction_steps: { type: "string" }, suggestion: { type: "string" }, suggestions: { type: "array", items: { type: "object", properties: { kind: { type: "string", enum: ["fix", "improvement", "documentation", "tooling", "policy"] }, recommendation: { type: "string" }, confidence: { type: "string", enum: ["low", "medium", "high"] }, evidence: { type: "string" } } } }, follow_ups: { type: "array", items: { type: "string" } } } }, expected_outcome: { type: "string" }, observed_result: { type: "string" }, reproduction_steps: { type: "string" }, context: { type: "object" }, severity: { type: "string" }, message: { type: "string" }, workspace: { type: "string" }, environment: { type: "string" }, resource: { type: "string" }, metadata: { type: "object" } } } }),
   Object.freeze({ name: MCP_TOOL.REQUEST_ONBOARDING, description: "Create a pending provider onboarding request with DNS verification instructions; provider side effects remain explicit.", inputSchema: { type: "object", required: ["idempotency_key", "provider", "target", "workspace", "environment"], properties: { idempotency_key: { type: "string" }, provider: { type: "string" }, target: { type: "string" }, workspace: { type: "string" }, environment: { type: "string" }, resource: { type: "string" }, intent: { type: "string" } } } }),
   Object.freeze({ name: MCP_TOOL.GET_ONBOARDING_REQUEST, description: "Read an authorized onboarding request and its verification status.", inputSchema: { type: "object", required: ["request_id"], properties: { request_id: { type: "string" } } } }),
   Object.freeze({ name: MCP_TOOL.REGISTER_SERVICE, description: "Register a pending service catalog record.", inputSchema: { type: "object", required: ["canonical_name", "service_type", "provider", "endpoint", "workspace", "capabilities", "expires_at", "idempotency_key"], properties: { canonical_name: { type: "string" }, service_type: { type: "string" }, provider: { type: "string" }, endpoint: { type: "string" }, workspace: { type: "string" }, parent_workspace: { type: "string" }, environment: { type: "string" }, capabilities: { type: "array" }, expires_at: { type: "string" }, idempotency_key: { type: "string" }, metadata: { type: "object" } } } }),
   Object.freeze({ name: MCP_TOOL.LIST_SERVICES, description: "List authorized service catalog records.", inputSchema: { type: "object", required: ["workspace"], properties: { workspace: { type: "string" } } } }),
   Object.freeze({ name: MCP_TOOL.ANALYZE_FEEDBACK, description: "Analyze one authorized feedback record into deterministic, reviewable suggestions.", inputSchema: { type: "object", required: ["feedback_id", "correlation_id"], properties: { feedback_id: { type: "string" }, correlation_id: { type: "string" } } } }),
   Object.freeze({ name: MCP_TOOL.GET_FEEDBACK_SUGGESTIONS, description: "Read authorized feedback suggestions without applying policy.", inputSchema: { type: "object", required: ["feedback_id"], properties: { feedback_id: { type: "string" } } } }),
+Object.freeze({ name: MCP_TOOL.COMPLETE_FEEDBACK, description: "Attach the feedback_post node to a record the same subject already submitted, closing the pre/post loop.", inputSchema: { type: "object", required: ["feedback_id", "feedback_post"], properties: { feedback_id: { type: "string" }, feedback_post: { type: "object", properties: { outcome: { type: "string", enum: ["achieved", "partial", "not_achieved", "blocked", "unknown"] }, observed_result: { type: "string" }, reproduction_steps: { type: "string" }, suggestion: { type: "string" }, suggestions: { type: "array", items: { type: "object" } }, follow_ups: { type: "array", items: { type: "string" } } } } } } }),
 ]);
 export const AUDIENCE = "id-worker";
 export const ENVIRONMENT = Object.freeze({
@@ -102,6 +105,38 @@ const FEEDBACK_METADATA_KEYS = Object.freeze(["component", "operation", "route",
 const FEEDBACK_MAX_MESSAGE = 4096;
 const FEEDBACK_MAX_FIELD = 512;
 const FEEDBACK_MAX_METADATA_BYTES = 8192;
+// feedback_pre declares intent before the work; feedback_post reports outcome and suggestions
+// after it. Both nodes are allowlisted, bounded, and redacted exactly like the flat fields.
+const FEEDBACK_PRE_KEYS = Object.freeze(["objective", "objectives", "constraints", "expected_outcome", "context"]);
+const FEEDBACK_POST_KEYS = Object.freeze(["outcome", "observed_result", "reproduction_steps", "suggestion", "suggestions", "follow_ups"]);
+const FEEDBACK_SUGGESTION_KEYS = Object.freeze(["kind", "recommendation", "confidence", "evidence"]);
+const FEEDBACK_MAX_ITEMS = 12;
+export const FEEDBACK_OUTCOME = Object.freeze({ ACHIEVED: "achieved", PARTIAL: "partial", NOT_ACHIEVED: "not_achieved", BLOCKED: "blocked", UNKNOWN: "unknown" });
+export const FEEDBACK_SUGGESTION_KIND = Object.freeze({ FIX: "fix", IMPROVEMENT: "improvement", DOCUMENTATION: "documentation", TOOLING: "tooling", POLICY: "policy" });
+export const FEEDBACK_SUGGESTION_CONFIDENCE = Object.freeze({ LOW: "low", MEDIUM: "medium", HIGH: "high" });
+const FEEDBACK_OUTCOMES = new Set(Object.values(FEEDBACK_OUTCOME));
+const FEEDBACK_SUGGESTION_KINDS = new Set(Object.values(FEEDBACK_SUGGESTION_KIND));
+const FEEDBACK_SUGGESTION_CONFIDENCES = new Set(Object.values(FEEDBACK_SUGGESTION_CONFIDENCE));
+// The published fill-in template. It contains placeholders only: never a token, credential, or
+// private datum. Agents may copy it into feedback_pre and feedback_post verbatim.
+export const FEEDBACK_TEMPLATE = Object.freeze({
+  schema: SCHEMA.FEEDBACK,
+  feedback_pre: Object.freeze({
+    objective: "<one sentence: what you were trying to achieve>",
+    objectives: Object.freeze(["<first objective, in order>", "<next objective>"]),
+    constraints: Object.freeze(["<bound, policy, or non-goal you were working within>"]),
+    expected_outcome: "<what success would have looked like>",
+  }),
+  feedback_post: Object.freeze({
+    outcome: "achieved|partial|not_achieved|blocked|unknown",
+    observed_result: "<what actually happened>",
+    suggestion: "<the single change that would have helped most>",
+    suggestions: Object.freeze([
+      Object.freeze({ kind: "fix|improvement|documentation|tooling|policy", recommendation: "<specific, actionable change>", confidence: "low|medium|high", evidence: "<bounded, sanitized evidence>" }),
+    ]),
+    follow_ups: Object.freeze(["<open question or next check>"]),
+  }),
+});
 const FEEDBACK_ENABLED = "FEEDBACK_ENABLED";
 const ONBOARDING_MAX_INTENT = 2048;
 const ONBOARDING_MAX_TARGET = 512;
@@ -224,6 +259,26 @@ function boundedText(value, field, maximum = FEEDBACK_MAX_FIELD) {
   return value;
 }
 
+// A value lives in exactly one place: the legacy flat field, or the structured node that owns it.
+// Supplying the same value in both places is harmless; supplying two different values is a
+// contradiction and fails closed rather than silently picking a winner. A request that uses the
+// nodes may open a record before the outcome exists; that is reported as the empty string, which
+// means "not reported yet" — never an estimate. A request carrying neither node keeps the original
+// contract, where all three fields are required.
+function feedbackFieldText(value, fallback, field, optional) {
+  const declared = value === undefined || value === "" ? undefined : value;
+  const derived = fallback === undefined || fallback === "" ? undefined : fallback;
+  if (declared !== undefined && derived !== undefined && declared !== derived) {
+    fail("invalid_feedback", `${field} must not be supplied twice with different values`, 400);
+  }
+  const candidate = declared ?? derived;
+  if (candidate === undefined) {
+    if (optional) return "";
+    fail("invalid_feedback", `${field} must be a non-empty bounded string`, 400);
+  }
+  return redactSecrets(boundedText(candidate, field, FEEDBACK_MAX_MESSAGE));
+}
+
 function feedbackFeatureEnabled(env = {}) {
   const value = env[FEEDBACK_ENABLED];
   if (value === true || value === "true" || value === "1") return true;
@@ -268,6 +323,89 @@ function sanitizeContext(value) {
   const encoded = JSON.stringify(output);
   if (new TextEncoder().encode(encoded).byteLength > FEEDBACK_MAX_METADATA_BYTES) fail("feedback_too_large", "feedback context is too large", 413);
   return Object.freeze(output);
+}
+
+function feedbackNodeObject(value, field, allowedKeys) {
+  if (value === undefined) return undefined;
+  if (!value || typeof value !== "object" || Array.isArray(value)) fail("invalid_feedback", `${field} must be an object`, 400);
+  for (const key of Object.keys(value)) {
+    if (!allowedKeys.includes(key)) fail("invalid_feedback", `${field}.${key} is not allowed`, 400);
+  }
+  return value;
+}
+
+function boundedNodeBytes(node, field) {
+  const encoded = JSON.stringify(node);
+  if (new TextEncoder().encode(encoded).byteLength > FEEDBACK_MAX_METADATA_BYTES) fail("feedback_too_large", `${field} is too large`, 413);
+  return Object.freeze(node);
+}
+
+function feedbackTextList(value, field, maximum = FEEDBACK_MAX_FIELD) {
+  if (value === undefined) return undefined;
+  if (!Array.isArray(value) || value.length === 0 || value.length > FEEDBACK_MAX_ITEMS) {
+    fail("invalid_feedback", `${field} must be a non-empty array of at most ${FEEDBACK_MAX_ITEMS} entries`, 400);
+  }
+  return Object.freeze(value.map((item, index) => redactSecrets(boundedText(item, `${field}[${index}]`, maximum))));
+}
+
+function feedbackEnum(value, allowed, field) {
+  if (value === undefined) return undefined;
+  if (!allowed.has(value)) fail("invalid_feedback", `${field} is not allowed`, 400);
+  return value;
+}
+
+function sanitizeFeedbackSuggestions(value, field) {
+  if (value === undefined) return undefined;
+  if (!Array.isArray(value) || value.length === 0 || value.length > FEEDBACK_MAX_ITEMS) {
+    fail("invalid_feedback", `${field} must be a non-empty array of at most ${FEEDBACK_MAX_ITEMS} entries`, 400);
+  }
+  return Object.freeze(value.map((item, index) => {
+    const label = `${field}[${index}]`;
+    const suggestion = feedbackNodeObject(item, label, FEEDBACK_SUGGESTION_KEYS);
+    if (!suggestion) fail("invalid_feedback", `${label} is required`, 400);
+    const entry = { recommendation: redactSecrets(boundedText(suggestion.recommendation, `${label}.recommendation`, FEEDBACK_MAX_FIELD)) };
+    const kind = feedbackEnum(suggestion.kind, FEEDBACK_SUGGESTION_KINDS, `${label}.kind`);
+    if (kind) entry.kind = kind;
+    const confidence = feedbackEnum(suggestion.confidence, FEEDBACK_SUGGESTION_CONFIDENCES, `${label}.confidence`);
+    if (confidence) entry.confidence = confidence;
+    if (suggestion.evidence !== undefined) entry.evidence = redactSecrets(boundedText(suggestion.evidence, `${label}.evidence`, FEEDBACK_MAX_FIELD));
+    return Object.freeze(entry);
+  }));
+}
+
+// feedback_pre is the agent's declared intent: what it was trying to achieve and in what order.
+// It carries goals and bounds only — never tool output, prompts, or credentials. Unknown keys are
+// rejected rather than stored, and every string is redacted before it is bounded.
+export function sanitizeFeedbackPre(value) {
+  const node = feedbackNodeObject(value, "feedback_pre", FEEDBACK_PRE_KEYS);
+  if (node === undefined) return undefined;
+  const output = { objective: redactSecrets(boundedText(node.objective, "feedback_pre.objective", FEEDBACK_MAX_MESSAGE)) };
+  const objectives = feedbackTextList(node.objectives, "feedback_pre.objectives");
+  if (objectives) output.objectives = objectives;
+  const constraints = feedbackTextList(node.constraints, "feedback_pre.constraints");
+  if (constraints) output.constraints = constraints;
+  if (node.expected_outcome !== undefined) output.expected_outcome = redactSecrets(boundedText(node.expected_outcome, "feedback_pre.expected_outcome", FEEDBACK_MAX_MESSAGE));
+  const context = sanitizeContext(node.context);
+  if (context) output.context = context;
+  return boundedNodeBytes(output, "feedback_pre");
+}
+
+// feedback_post is the closing report: what actually happened, and the structured suggestions that
+// would have made it smoother. An outcome is required so an absent result is never estimated.
+export function sanitizeFeedbackPost(value) {
+  const node = feedbackNodeObject(value, "feedback_post", FEEDBACK_POST_KEYS);
+  if (node === undefined) return undefined;
+  const outcome = feedbackEnum(node.outcome, FEEDBACK_OUTCOMES, "feedback_post.outcome");
+  if (!outcome) fail("invalid_feedback", "feedback_post.outcome is required", 400);
+  const output = { outcome };
+  if (node.observed_result !== undefined) output.observed_result = redactSecrets(boundedText(node.observed_result, "feedback_post.observed_result", FEEDBACK_MAX_MESSAGE));
+  if (node.reproduction_steps !== undefined) output.reproduction_steps = redactSecrets(boundedText(node.reproduction_steps, "feedback_post.reproduction_steps", FEEDBACK_MAX_MESSAGE));
+  if (node.suggestion !== undefined) output.suggestion = redactSecrets(boundedText(node.suggestion, "feedback_post.suggestion", FEEDBACK_MAX_FIELD));
+  const suggestions = sanitizeFeedbackSuggestions(node.suggestions, "feedback_post.suggestions");
+  if (suggestions) output.suggestions = suggestions;
+  const followUps = feedbackTextList(node.follow_ups, "feedback_post.follow_ups");
+  if (followUps) output.follow_ups = followUps;
+  return boundedNodeBytes(output, "feedback_post");
 }
 
 async function subjectHash(subject) {
@@ -375,7 +513,7 @@ export async function getOnboardingRequest({ requestId, subject, store, policy, 
   return { ...record, status, challenge: record.challenge, repository_remote: record.repository_remote };
 }
 
-export async function submitFeedback({ subject, feedback, store, policy, env = {}, now = new Date(), randomId } = {}) {
+export async function submitFeedback({ subject, feedback, store, policy, env = {}, now = new Date(), randomId, ctx } = {}) {
   feedbackFeatureEnabled(env);
   const actor = assertLiveSubject(subject, now);
   const body = feedback || {};
@@ -391,13 +529,18 @@ export async function submitFeedback({ subject, feedback, store, policy, env = {
   const prior = await store.getIdempotency(actorSubjectHash, idempotencyKey);
   if (prior) return prior;
   const createdAt = new Date(now).toISOString();
+  const feedbackPre = sanitizeFeedbackPre(body.feedback_pre);
+  const feedbackPost = sanitizeFeedbackPost(body.feedback_post);
+  const nodesPresent = feedbackPre !== undefined || feedbackPost !== undefined;
+  const expectedOutcome = feedbackFieldText(body.expected_outcome, feedbackPre?.expected_outcome, "expected_outcome", nodesPresent);
+  const observedResult = feedbackFieldText(body.observed_result, feedbackPost?.observed_result, "observed_result", nodesPresent);
+  const reproductionSteps = feedbackFieldText(body.reproduction_steps, feedbackPost?.reproduction_steps, "reproduction_steps", nodesPresent);
   const record = Object.freeze({
     schema: SCHEMA.FEEDBACK, feedback_id: opaqueId(randomId), actor_subject_hash: actorSubjectHash, actor_kind: actor.kind,
     correlation_id: boundedText(body.correlation_id, "correlation_id"), prompt_id: boundedText(body.prompt_id, "prompt_id"),
     workspace, environment, resource, event: boundedText(body.event, "event"), action: boundedText(body.action, "action"), context,
-    expected_outcome: redactSecrets(boundedText(body.expected_outcome, "expected_outcome", FEEDBACK_MAX_MESSAGE)),
-    observed_result: redactSecrets(boundedText(body.observed_result, "observed_result", FEEDBACK_MAX_MESSAGE)),
-    reproduction_steps: redactSecrets(boundedText(body.reproduction_steps, "reproduction_steps", FEEDBACK_MAX_MESSAGE)),
+    expected_outcome: expectedOutcome, observed_result: observedResult, reproduction_steps: reproductionSteps,
+    feedback_pre: feedbackPre, feedback_post: feedbackPost, completed_at: feedbackPost ? createdAt : undefined,
     severity: body.severity, message: redactSecrets(boundedText(body.message, "message", FEEDBACK_MAX_MESSAGE)), metadata,
     created_at: createdAt, updated_at: createdAt, status: FEEDBACK_STATUS.OPEN, idempotency_key: idempotencyKey,
   });
@@ -405,7 +548,37 @@ export async function submitFeedback({ subject, feedback, store, policy, env = {
   const response = feedbackResponse(record);
   if (typeof store.createFeedbackWithIdempotency === "function") await store.createFeedbackWithIdempotency(record, response);
   else { requireMethod(store, "createFeedback"); await store.createFeedback(record); requireMethod(store, "putIdempotency"); await store.putIdempotency(actorSubjectHash, idempotencyKey, response); }
+  await deferForward(ctx, forwardFeedback(record, { store, env, now, outboxId: `${record.feedback_id}:pre` }));
   return response;
+}
+
+// The second half of the report: an agent that declared feedback_pre at submit time closes the loop
+// here with feedback_post. Only the submitting subject may complete its own record, and a record is
+// completed at most once.
+export async function completeFeedback({ feedbackId, subject, store, policy, env = {}, post, ctx, now = new Date() } = {}) {
+  feedbackFeatureEnabled(env);
+  const actor = assertLiveSubject(subject, now);
+  requireMethod(store, "getFeedback");
+  requireMethod(store, "attachFeedbackPost");
+  const record = await store.getFeedback(text(feedbackId, "feedback_id"));
+  if (!record) fail("not_found", "feedback not found", 404);
+  enforcePolicy(record, policy);
+  const actorHash = await subjectHash(actor.sub);
+  if (actorHash !== record.actor_subject_hash) fail("forbidden", "feedback is not writable by this subject", 403);
+  const feedbackPost = sanitizeFeedbackPost(post);
+  if (!feedbackPost) fail("invalid_feedback", "feedback_post is required", 400);
+  if (record.feedback_post) fail("feedback_already_completed", "feedback already has a post node", 409);
+  // The closing report owns the outcome side of the record. A value already stored in the flat field
+  // is accepted only when it agrees; otherwise the record would hold two contradictory truths.
+  const observedResult = feedbackFieldText(record.observed_result, feedbackPost.observed_result, "observed_result", true);
+  const reproductionSteps = feedbackFieldText(record.reproduction_steps, feedbackPost.reproduction_steps, "reproduction_steps", true);
+  const completedAt = new Date(now).toISOString();
+  const attached = await store.attachFeedbackPost(record.feedback_id, { feedback_post: feedbackPost, observed_result: observedResult, reproduction_steps: reproductionSteps }, completedAt);
+  if (!attached) fail("feedback_already_completed", "feedback already has a post node", 409);
+  const completed = Object.freeze({ ...record, observed_result: observedResult, reproduction_steps: reproductionSteps, feedback_post: feedbackPost, updated_at: completedAt, completed_at: completedAt });
+  if (typeof store.enqueueFeedbackOutbox === "function") await store.enqueueFeedbackOutbox(`${record.feedback_id}:post`, completed, completedAt);
+  await deferForward(ctx, forwardFeedback(completed, { store, env, now, outboxId: `${record.feedback_id}:post` }));
+  return { ...feedbackResponse(record), completed_at: completedAt, feedback_post: feedbackPost };
 }
 
 export async function getFeedback({ feedbackId, subject, store, policy, now = new Date(), env = {} } = {}) {
@@ -425,6 +598,127 @@ export async function getFeedback({ feedbackId, subject, store, policy, now = ne
   return feedbackRecordForResponse(record);
 }
 
+const FEEDBACK_FORWARD_TIMEOUT_MS = 5000;
+
+// An operator may shorten the bound for their deployment; it is clamped so it can never be zero or
+// unbounded. The bound applies to both transports: neither may hang a request or a waitUntil.
+function feedbackForwardTimeout(env = {}) {
+  const configured = Number(env.FEEDBACK_FORWARD_TIMEOUT_MS);
+  if (!Number.isFinite(configured) || configured <= 0) return FEEDBACK_FORWARD_TIMEOUT_MS;
+  return Math.min(Math.max(Math.trunc(configured), 100), 30000);
+}
+
+function withTimeout(promise, milliseconds, code) {
+  let timer;
+  const expiry = new Promise((_, reject) => { timer = setTimeout(() => reject(Object.assign(new Error(code), { code })), milliseconds); });
+  return Promise.race([promise, expiry]).finally(() => clearTimeout(timer));
+}
+const FEEDBACK_FORWARD_BINDING_NAMES = Object.freeze(["EMAIL", "FEEDBACK_EMAIL"]);
+
+function feedbackEmailBinding(env = {}) {
+  for (const name of FEEDBACK_FORWARD_BINDING_NAMES) {
+    const binding = env[name];
+    if (binding && typeof binding.send === "function") return binding;
+  }
+  return undefined;
+}
+
+// A destination that is missing, not https, or carries credentials is a configuration fault, not a
+// delivery attempt. It is reported as a safe code so that the accepted record is never failed or
+// lost because of a value only the operator can correct.
+function feedbackForwardDestination(env = {}) {
+  const value = env.FEEDBACK_FORWARD_URL;
+  if (typeof value !== "string" || value.length === 0) return undefined;
+  let parsed;
+  try { parsed = new URL(value); } catch { return { error_code: "forward_url_invalid" }; }
+  if (parsed.protocol !== "https:") return { error_code: "forward_url_not_https" };
+  if (parsed.username || parsed.password) return { error_code: "forward_url_credentials" };
+  return { url: parsed.toString() };
+}
+
+// The forwarded payload is the sanitized record and nothing else: no raw request body, no headers,
+// no cookies, no client address, no provider response.
+function feedbackForwardPayload(record) {
+  return {
+    schema: record.schema, feedback_id: record.feedback_id, correlation_id: record.correlation_id, prompt_id: record.prompt_id,
+    workspace: record.workspace, environment: record.environment, resource: record.resource,
+    event: record.event, action: record.action, severity: record.severity, status: record.status,
+    message: record.message, expected_outcome: record.expected_outcome, observed_result: record.observed_result,
+    reproduction_steps: record.reproduction_steps, context: record.context, metadata: record.metadata,
+    feedback_pre: record.feedback_pre, feedback_post: record.feedback_post,
+    created_at: record.created_at, updated_at: record.updated_at, completed_at: record.completed_at,
+  };
+}
+
+function feedbackForwardSubject(record) {
+  const outcome = record.feedback_post?.outcome ? ` ${record.feedback_post.outcome}` : "";
+  return `[id feedback] ${record.severity} ${record.event}${outcome}`.slice(0, 200);
+}
+
+function feedbackForwardText(record) {
+  return ["Sanitized id feedback record: goals, outcome, and suggestions only. No credentials.", "", JSON.stringify(feedbackForwardPayload(record), null, 2)].join("\n");
+}
+
+// Only safe, known provider codes are retained; provider messages are never stored or returned.
+function feedbackForwardErrorCode(error, fallback) {
+  const code = typeof error?.code === "string" ? error.code : "";
+  const message = typeof error?.message === "string" ? error.message : "";
+  for (const known of ["E_SENDER_NOT_VERIFIED", "E_RECIPIENT_NOT_ALLOWED", "E_RATE_LIMITED", "E_EMAIL_SENDING_DISABLED", "email_send_timeout"]) {
+    if (code === known || message.includes(known)) return known;
+  }
+  return fallback;
+}
+
+async function forwardFeedbackByEmail(record, env) {
+  const binding = feedbackEmailBinding(env);
+  const from = env.FEEDBACK_FORWARD_FROM;
+  if (!binding || typeof from !== "string" || from.length === 0) return undefined;
+  // `to: null` hands routing to the binding's configured default destination address.
+  const to = typeof env.FEEDBACK_FORWARD_TO === "string" && env.FEEDBACK_FORWARD_TO.length > 0 ? env.FEEDBACK_FORWARD_TO : null;
+  try {
+    await withTimeout(binding.send({ to, from, subject: feedbackForwardSubject(record), text: feedbackForwardText(record) }), feedbackForwardTimeout(env), "email_send_timeout");
+    return { status: "delivered" };
+  } catch (error) {
+    return { status: "pending", error_code: feedbackForwardErrorCode(error, "email_send_failed") };
+  }
+}
+
+async function forwardFeedbackByUrl(record, env) {
+  const destination = feedbackForwardDestination(env);
+  if (!destination) return undefined;
+  if (!destination.url) return { status: "pending", error_code: destination.error_code };
+  const headers = { "content-type": "application/json" };
+  if (typeof env.FEEDBACK_FORWARD_TOKEN === "string" && env.FEEDBACK_FORWARD_TOKEN.length > 0) headers.authorization = `Bearer ${env.FEEDBACK_FORWARD_TOKEN}`;
+  try {
+    // `redirect: "manual"` guarantees the sanitized payload is never resent to a redirect target,
+    // which could downgrade an https destination to plaintext http or move it off-site.
+    const response = await fetch(destination.url, { method: "POST", headers, body: JSON.stringify(feedbackForwardPayload(record)), redirect: "manual", signal: AbortSignal.timeout(feedbackForwardTimeout(env)) });
+    if (response.type === "opaqueredirect" || (response.status >= 300 && response.status < 400)) return { status: "pending", error_code: "forward_redirect_rejected" };
+    if (response.ok) return { status: "delivered" };
+    return { status: "pending", error_code: `forward_http_${Math.trunc(response.status)}` };
+  } catch { return { status: "pending", error_code: "forward_unreachable" }; }
+}
+
+// Feedback is a relay: every accepted record is forwarded to the deployment's configured default
+// address. The native Cloudflare email binding is preferred because the binding itself owns the
+// destination address; the HTTPS fallback covers deployments without Email Service. A forward never
+// changes the record, never throws, and never blocks the accepted write.
+export async function forwardFeedback(record, { store, env = {}, now = new Date(), outboxId = `${record.feedback_id}:pre` } = {}) {
+  const attempt = (await forwardFeedbackByEmail(record, env)) || (await forwardFeedbackByUrl(record, env));
+  // Nothing configured is not a delivery attempt: the record simply stays pending for an operator.
+  if (!attempt) return Object.freeze({ status: "pending", error_code: "forward_not_configured" });
+  if (typeof store?.markFeedbackOutbox === "function") {
+    try { await store.markFeedbackOutbox(outboxId, { ...attempt, delivered_at: attempt.status === "delivered" ? new Date(now).toISOString() : undefined }); }
+    catch { /* the record is already durable; a status-write failure must not change the forward result */ }
+  }
+  return Object.freeze(attempt);
+}
+
+function deferForward(ctx, promise) {
+  if (ctx && typeof ctx.waitUntil === "function") { ctx.waitUntil(promise); return undefined; }
+  return promise;
+}
+
 const ASSISTANT_ENABLED = "ASSISTANT_ENABLED";
 
 function assistantFeatureEnabled(env = {}) {
@@ -441,7 +735,9 @@ export async function analyzeFeedback({ feedbackId, correlationId, subject, stor
   if (feedback.severity === FEEDBACK_SEVERITY.ERROR || feedback.severity === FEEDBACK_SEVERITY.CRITICAL) suggestions.push({ recipe: "verify_authorization_inputs", required_scopes: ["id:feedback:read"], risks: ["scope escalation", "stale approval"], missing_verification: ["active parent grant", "approver record"] });
   if (feedback.event.includes("access") || feedback.action.includes("approve")) suggestions.push({ recipe: "show_explicit_approval_state", required_scopes: ["id:access:read"], risks: ["ambiguous human approval"], missing_verification: ["correlation_id linkage"] });
   if (suggestions.length === 0) suggestions.push({ recipe: "capture_reproduction_and_context", required_scopes: ["id:feedback:read"], risks: ["incomplete diagnosis"], missing_verification: ["reproduction evidence"] });
-  const result = Object.freeze({ schema: SCHEMA.FEEDBACK, feedback_id: feedback.feedback_id, correlation_id: correlation, suggestions, proposed_policy_diff: { apply: false, changes: [] }, generated_at: new Date(now).toISOString() });
+  const post = feedback.feedback_post;
+  if (post && [FEEDBACK_OUTCOME.NOT_ACHIEVED, FEEDBACK_OUTCOME.BLOCKED, FEEDBACK_OUTCOME.PARTIAL].includes(post.outcome)) suggestions.push({ recipe: "reconcile_declared_objective", required_scopes: ["id:feedback:read"], risks: ["unmet declared objective", "unverified post-condition"], missing_verification: ["objective evidence", "post-condition check"] });
+  const result = Object.freeze({ schema: SCHEMA.FEEDBACK, feedback_id: feedback.feedback_id, correlation_id: correlation, declared_objective: feedback.feedback_pre?.objective, declared_objectives: feedback.feedback_pre?.objectives, outcome: post?.outcome, agent_suggestions: post?.suggestions || [], suggestions, proposed_policy_diff: { apply: false, changes: [] }, generated_at: new Date(now).toISOString() });
   if (typeof store.createFeedbackSuggestion === "function") await store.createFeedbackSuggestion(result);
   return result;
 }
@@ -479,8 +775,11 @@ function feedbackRecordForResponse(record) {
     severity: record.severity,
     message: record.message,
     metadata: record.metadata,
+    feedback_pre: record.feedback_pre,
+    feedback_post: record.feedback_post,
     created_at: record.created_at,
     updated_at: record.updated_at,
+    completed_at: record.completed_at,
     status: record.status,
   };
 }
@@ -845,7 +1144,7 @@ async function authenticateAny(request, env) {
 
 function pathParts(url) { return new URL(url).pathname.split("/").filter(Boolean); }
 
-export async function handleRequest(request, env = {}) {
+export async function handleRequest(request, env = {}, ctx = {}) {
   try {
     const url = new URL(request.url);
     const parts = pathParts(request.url);
@@ -862,7 +1161,7 @@ export async function handleRequest(request, env = {}) {
       const subject = await authenticateAny(request, env);
       const body = await parseBody(request);
       if (!body.idempotency_key) body.idempotency_key = request.headers.get("idempotency-key") || undefined;
-      return json(await submitFeedback({ subject, feedback: body, policy: runtimePolicy(env), store: storeForEnv(env), env: { ...env, [FEEDBACK_ENABLED]: env[FEEDBACK_ENABLED] === true || env[FEEDBACK_ENABLED] === "true" } }), 201);
+      return json(await submitFeedback({ subject, feedback: body, policy: runtimePolicy(env), store: storeForEnv(env), env: { ...env, [FEEDBACK_ENABLED]: env[FEEDBACK_ENABLED] === true || env[FEEDBACK_ENABLED] === "true" }, ctx }), 201);
     }
     if (request.method === "GET" && parts[0] === "api" && parts[1] === "v1" && parts[2] === "feedback" && parts.length === 4) {
       const subject = await authenticateAny(request, env);
@@ -876,6 +1175,11 @@ export async function handleRequest(request, env = {}) {
     if (request.method === "GET" && parts[0] === "api" && parts[1] === "v1" && parts[2] === "feedback" && parts[4] === "suggestions" && parts.length === 5) {
       const subject = await authenticateAny(request, env);
       return json(await getFeedbackSuggestions({ feedbackId: parts[3], subject, policy: runtimePolicy(env), store: storeForEnv(env), env }));
+    }
+    if (request.method === "POST" && parts[0] === "api" && parts[1] === "v1" && parts[2] === "feedback" && parts[4] === "complete" && parts.length === 5) {
+      const subject = await authenticateAny(request, env);
+      const body = await parseBody(request);
+      return json(await completeFeedback({ feedbackId: parts[3], subject, post: body.feedback_post, store: storeForEnv(env), policy: runtimePolicy(env), env, ctx, now: new Date() }));
     }
     if (request.method === "POST" && url.pathname === "/api/v1/onboarding/requests") {
       const subject = await authenticateAny(request, env);
@@ -917,13 +1221,13 @@ export async function handleRequest(request, env = {}) {
       const body = await parseBody(request);
       return json(await approveAccessRequest({ requestId, subject, decision: body.decision, policy, store }));
     }
-    if (request.method === "POST" && url.pathname === "/mcp") return handleMcp(request, env);
+    if (request.method === "POST" && url.pathname === "/mcp") return handleMcp(request, env, ctx);
     if (request.method === "GET" && env.ASSETS && typeof env.ASSETS.fetch === "function") return env.ASSETS.fetch(request);
     fail("not_found", "route not found", 404);
   } catch (error) { return failClosedResponse(error); }
 }
 
-export async function handleMcp(request, env = {}) {
+export async function handleMcp(request, env = {}, ctx = {}) {
   let messageId = null;
   try {
     const body = await parseBody(request);
@@ -934,12 +1238,12 @@ export async function handleMcp(request, env = {}) {
       if (typeof env.AUTHORIZE_RECOVERY !== "function") fail("authorization_unavailable", "recovery authorization is unavailable");
       authorizer = verifiedClaim(await env.AUTHORIZE_RECOVERY(request, subject), env, SUBJECT_KIND.HUMAN);
     }
-    const result = await dispatchMcp(body, { subject, authorizer, policy: runtimePolicy(env), store: storeForEnv(env), env });
+    const result = await dispatchMcp(body, { subject, authorizer, policy: runtimePolicy(env), store: storeForEnv(env), env, ctx });
     return json({ jsonrpc: "2.0", id: body.id ?? null, result });
   } catch (error) { return json({ jsonrpc: "2.0", id: messageId, error: { code: error instanceof FailClosedError ? error.code : "service_unavailable" } }, error instanceof FailClosedError ? error.status : 503); }
 }
 
-export async function dispatchMcp(message, { subject, authorizer, policy, store, env = {} } = {}) {
+export async function dispatchMcp(message, { subject, authorizer, policy, store, env = {}, ctx } = {}) {
   if (!message || message.jsonrpc !== "2.0" || typeof message.method !== "string") fail("invalid_mcp_request", "invalid MCP request", 400);
   if (message.method === MCP_PROTOCOL.INITIALIZE) return { protocolVersion: MCP_PROTOCOL.VERSION, capabilities: { tools: {} }, serverInfo: { name: "id-worker", version: "1.0.0" } };
   if (message.method === MCP_PROTOCOL.TOOLS_LIST) return { tools: MCP_TOOLS };
@@ -955,7 +1259,8 @@ export async function dispatchMcp(message, { subject, authorizer, policy, store,
       case MCP_TOOL.GET_GRANT: toolResult = await getGrant({ subject, grantId: toolArguments.grant_id, policy, store }); break;
       case MCP_TOOL.BACKUP_IDENTITY: toolResult = await backupIdentity({ subject, envelope: toolArguments.envelope, store }); break;
       case MCP_TOOL.RESTORE_IDENTITY: toolResult = await restoreIdentity({ subject, backupId: toolArguments.backup_id, proof: toolArguments.proof, authorizer, store, verifyProof: env.verifyProof }); break;
-      case MCP_TOOL.SUBMIT_FEEDBACK: toolResult = await submitFeedback({ subject, feedback: toolArguments, policy, store, env }); break;
+      case MCP_TOOL.SUBMIT_FEEDBACK: toolResult = await submitFeedback({ subject, feedback: toolArguments, policy, store, env, ctx }); break;
+      case MCP_TOOL.COMPLETE_FEEDBACK: toolResult = await completeFeedback({ subject, feedbackId: toolArguments.feedback_id, post: toolArguments.feedback_post, policy, store, env, ctx }); break;
       case MCP_TOOL.REQUEST_ONBOARDING: toolResult = await requestOnboarding({ subject, onboarding: toolArguments, policy, store, env }); break;
       case MCP_TOOL.GET_ONBOARDING_REQUEST: toolResult = await getOnboardingRequest({ subject, requestId: toolArguments.request_id, policy, store }); break;
       case MCP_TOOL.REGISTER_SERVICE: toolResult = await registerService({ subject, service: toolArguments, policy, store, env }); break;
@@ -972,7 +1277,8 @@ export async function dispatchMcp(message, { subject, authorizer, policy, store,
     case MCP_METHOD.GET_GRANT: return getGrant({ subject, grantId: params.grant_id, policy, store });
     case MCP_METHOD.BACKUP_IDENTITY: return backupIdentity({ subject, envelope: params.envelope, store });
     case MCP_METHOD.RESTORE_IDENTITY: return restoreIdentity({ subject, backupId: params.backup_id, proof: params.proof, authorizer, store, verifyProof: env.verifyProof });
-    case MCP_METHOD.SUBMIT_FEEDBACK: return submitFeedback({ subject, feedback: params, policy, store, env });
+    case MCP_METHOD.SUBMIT_FEEDBACK: return submitFeedback({ subject, feedback: params, policy, store, env, ctx });
+  case MCP_METHOD.COMPLETE_FEEDBACK: return completeFeedback({ subject, feedbackId: params.feedback_id, post: params.feedback_post, policy, store, env, ctx });
     case MCP_METHOD.REQUEST_ONBOARDING: return requestOnboarding({ subject, onboarding: params, policy, store, env });
     case MCP_METHOD.GET_ONBOARDING_REQUEST: return getOnboardingRequest({ subject, requestId: params.request_id, policy, store });
     case MCP_METHOD.REGISTER_SERVICE: return registerService({ subject, service: params, policy, store, env });

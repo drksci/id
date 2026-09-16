@@ -1,0 +1,41 @@
+// One-click Cloudflare template for `id`.
+//
+// This file is the PUBLIC, non-bespoke template contract. It deliberately contains no account ID,
+// no database ID, no hostname, no domain, and no operator secret, so that anyone can deploy it
+// into their own Cloudflare account and get a running Worker immediately.
+//
+// The private deployment contract owned by this repository's operator (four named environments,
+// explicit D1 IDs, operator hostnames) lives in infra/wrangler.toml and is intentionally unrelated
+// to this file. Use `--config infra/wrangler.toml`, or the render script that feeds it, for that
+// path. Never point the operator workflow at this file, and never add operator values to it.
+{
+  "name": "id-gateway",
+  "main": "src/index.ts",
+  "compatibility_date": "2024-09-23",
+  "workers_dev": true,
+  "preview_urls": true,
+  "upload_source_maps": true,
+  "observability": { "enabled": true },
+  // The static discovery shell in ./public is served through the ASSETS binding; only the dynamic
+  // routes run the Worker first. Everything else falls back to the asset, then to the Worker.
+  "assets": {
+    "directory": "./public",
+    "binding": "ASSETS",
+    "run_worker_first": ["/api/*", "/healthz", "/readyz", "/approve/*"]
+  }
+  // Durable state is OPT-IN: without it the Worker still boots, serves the whole static shell, and
+  // answers /healthz, while every stateful API fails closed and /readyz reports not ready.
+  //
+  // To enable it: create a D1 database (`npx wrangler d1 create id-data`), apply the migrations in
+  // ./migrations (`npx wrangler d1 migrations apply id-data --remote`), then uncomment this block
+  // and paste your own database ID:
+  //
+  // "d1_databases": [
+  //   {
+  //     "binding": "DB",
+  //     "database_name": "id-data",
+  //     "database_id": "<your-database-id>",
+  //     "migrations_dir": "./migrations"
+  //   }
+  // ]
+}

@@ -2,6 +2,13 @@
 # D1 IDs are explicit ${D1_DATABASE_ID_*} references rendered by CI; no account IDs or secrets
 # belong here.
 
+# Feedback relay, rung 2 of infra/README.md (optional). The native binding owns the destination
+# address, so the Worker sends with `to: null`. Uncomment after onboarding a sender domain to Email
+# Service, and repeat the binding in each environment that should relay feedback.
+# [[send_email]]
+# name = "EMAIL"
+# destination_address = "<operator-feedback-inbox>"
+
 name = "id-worker"
 main = "../src/index.ts"
 compatibility_date = "2024-09-23"

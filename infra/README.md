@@ -7,6 +7,14 @@ runtime in `src/runtime.js`; the static discovery/documentation
 surface is exposed through Wrangler's `ASSETS` binding over `public/`. Because this config lives in
 `infra/`, its paths are explicitly `../src/index.ts` and `../public`.
 
+The repository root also carries `wrangler.jsonc`: the public one-click template contract used by
+the `Deploy to Cloudflare` button, for anyone who wants to run their own copy in their own
+Cloudflare account. It is deliberately generic — no operator hostnames, account ID, database ID, or
+secrets — and deploys a separate Worker named `id-gateway` with only the `ASSETS` binding, so D1
+state and authentication remain opt-in and fail closed until the operator of that copy adds them.
+It is not this directory's contract: deploy the operator environments only with
+`infra/wrangler.toml` (or its rendered equivalent) and never add operator values to the template.
+
 The configuration is safe to commit. `infra/wrangler.toml` contains non-secret public settings and
 explicit `${D1_DATABASE_ID_*}` variable references. CI renders a temporary config from GitHub
 Environment variables before invoking Wrangler. It does not create Cloudflare resources, configure
@@ -130,6 +138,36 @@ caches the static discovery shell and hands an already-sanitized feedback POST t
 it never receives provider credentials. Browsers without an install prompt get the browser-menu
 fallback. Keep the shell cache versioned when static contracts change and verify that an offline
 feedback retry preserves its correlation ID without persisting secrets.
+
+## Feedback relay (progressive rungs)
+
+Feedback is a relay: the Worker accepts a sanitized record and forwards it to the deployment's
+configured default address. Each rung below is additive; the rung you do not configure is invisible,
+not broken.
+
+1. **Default, no configuration.** Records are validated, redacted, written to D1, and mirrored to the
+   outbox. Nothing leaves the Worker and nothing fails: the outbox row simply stays `pending`. No
+   binding, secret, or variable is needed.
+2. **Native email (preferred).** Forward through Cloudflare Email Service, which owns the destination
+   address. Add a `send_email` binding with `destination_address` set to the operator's inbox, then
+   set `FEEDBACK_FORWARD_FROM` to a sender on a domain onboarded to Email Service. The Worker calls
+   `send()` with `to: null`, so the binding's configured address is authoritative. Set
+   `FEEDBACK_FORWARD_TO` only to override that address explicitly. Bindings are not inherited by
+   environments: add the binding to each environment that relays.
+3. **HTTPS destination.** For deployments without Email Service, set `FEEDBACK_FORWARD_URL` (https
+   only, no credentials in the URL) and, when the destination requires it, the
+   `FEEDBACK_FORWARD_TOKEN` secret. Redirects are refused rather than followed, so a destination can
+   never move a payload to plaintext http or off-site, and both transports are bounded by
+   `FEEDBACK_FORWARD_TIMEOUT_MS` (default 5000, clamped to 100-30000). The payload is the same
+   sanitized record. A malformed destination is recorded as a safe code and never fails or delays the
+   accepted write.
+4. **Operator-owned replay.** Delivery is attempted once per lifecycle event: on submit, and again
+   when the closing `feedback_post` node is attached. `feedback_outbox` records `status`, `attempts`,
+   `delivered_at`, and a safe `last_error_code` (never a provider message). Retry, replay, and poison
+   handling stay with the operator and preserve the original `feedback_id` and correlation ID.
+
+No rung forwards a raw request body, a header, a cookie, or a client address, and no rung makes the
+accepted write wait on the destination.
 
 ## Deployment commands
 

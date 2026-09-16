@@ -82,6 +82,13 @@ expected outcome, observed result, safe reproduction steps, correlation ID, and 
 context. Sanitize before `POST /api/v1/feedback`; omit secrets, tokens, cookies, credentials,
 query strings, and local git credential helpers. `FEEDBACK_ENABLED` controls availability. The
 sanitized `feedback.md` mirror/outbox uses bounded retries and a poison queue for repeated failures.
+Declare intent first with `feedback_pre` (objective, then the ordered objectives and any bounds) and
+close the loop with `feedback_post` (outcome, observed result, and structured suggestions). Attach the
+post later through `POST /api/v1/feedback/{feedback_id}/complete` or the `complete_feedback` MCP tool;
+only the submitting subject may complete its own record, and only once. Feedback is a relay: an
+accepted record is forwarded to the deployment's configured default address through the native
+`send_email` binding, or an https `FEEDBACK_FORWARD_URL` fallback when no email binding is configured.
+Neither node may carry credentials, prompts, MCP instructions, or tool output.
 
 Use `/onboarding/` for GitHub App installation, Cloudflare authorization, and DNS CNAME/TXT
 verification. Detect a repository from its git remote and a service URL from trusted context, but

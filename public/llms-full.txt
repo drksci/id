@@ -35,10 +35,62 @@ plus a generated `correlation_id` and path-only `page_path`. It submits a saniti
 private keys, the query string, or local git credentials. Common secret formats are redacted before
 submission, but users must still leave secrets out. `FEEDBACK_ENABLED` is the deployment flag.
 
+Feedback records are `drksci.id.feedback.v1` and add two optional structured nodes beside the flat
+fields. `feedback_pre` is the agent's declared intent, written before or while it works: `objective`
+(required when present), `objectives` (ordered, max 12), `constraints` (max 12), `expected_outcome`,
+and `context`. `feedback_post` is the closing report: `outcome` (required when present, one of
+`achieved`, `partial`, `not_achieved`, `blocked`, `unknown`), `observed_result`,
+`reproduction_steps`, `suggestion`, `suggestions` (max 12 objects with `kind`, `recommendation`,
+`confidence`, `evidence`), and `follow_ups`. Both nodes are allowlisted: any other key is rejected,
+every string is bounded, the total node size is capped, and known secret shapes are redacted. A
+value is never estimated; if neither the node nor the flat field supplies it, the request fails. Put each value in exactly one
+place: the same value in both places is harmless, but two different values for the same fact fail
+closed with `invalid_feedback` instead of silently picking a winner, so never send two conflicting
+copies.
+
+Use this fill-in template (placeholders only) and replace the placeholders with your own bounded
+values:
+
+```json
+{"schema":"drksci.id.feedback.v1","feedback_pre":{"objective":"<one sentence: what you were trying to achieve>","objectives":["<first objective, in order>","<next objective>"],"constraints":["<bound, policy, or non-goal you were working within>"],"expected_outcome":"<what success would have looked like>"},"feedback_post":{"outcome":"achieved|partial|not_achieved|blocked|unknown","observed_result":"<what actually happened>","suggestion":"<the single change that would have helped most>","suggestions":[{"kind":"fix|improvement|documentation|tooling|policy","recommendation":"<specific, actionable change>","confidence":"low|medium|high","evidence":"<bounded, sanitized evidence>"}],"follow_ups":["<open question or next check>"]}}
+```
+
+An agent may declare intent first and close the loop later. `POST /api/v1/feedback` accepts
+`feedback_pre` and/or `feedback_post` in one call, or the legacy flat fields, and responds with
+`{feedback_id, status, correlation_id, created_at}`. `POST /api/v1/feedback/{feedback_id}/complete`
+attaches the post node afterwards with `{"feedback_post": { ... }}` and responds with
+`{feedback_id, status, correlation_id, created_at, completed_at, feedback_post}`; only the submitting
+subject may complete its own record (otherwise `403 forbidden`), and a second completion returns
+`409 feedback_already_completed`. The MCP tool / JSON-RPC method `complete_feedback` takes
+`{feedback_id, feedback_post}`, and `submit_feedback` also accepts both nodes.
+
+Redaction is best effort and cannot recognise private data that carries no recognisable shape.
+Never include credentials, tokens, cookies, authorization headers, query strings, private repository
+data, or tool output in either node. MCP instructions, prompts, and tool results must never be copied
+into `feedback_pre` or `feedback_post` and must never carry sensitive data: the nodes hold goals,
+bounds, outcomes, and suggestions only.
+
 The feedback mirror/outbox uses the root [`feedback.md`](../feedback.md) format: append one
 sanitized record, retain the correlation ID, retry transient failures with a bounded backoff, and
 move repeatedly failing records to a poison queue with an operator-visible reason. Agents should
 submit the smallest useful report and must not include credentials.
+
+Forwarding is Cloudflare-native and email-first. The Worker sends each sanitized record through a
+Cloudflare Email Service `send_email` binding read from `env.EMAIL` (alias `env.FEEDBACK_EMAIL`); the
+sender comes from `FEEDBACK_FORWARD_FROM`, an optional recipient override comes from
+`FEEDBACK_FORWARD_TO`, and when that override is unset the Worker passes `to: null` so the binding's
+default configured `destination_address` is authoritative. The binding may instead declare
+`allowed_destination_addresses` / `allowed_sender_addresses`, and the sender must belong to a domain
+onboarded to Email Service. The email body carries the sanitized record JSON (both nodes included)
+and never a raw request body; sender-side failures are recorded as safe codes only (for example
+`E_SENDER_NOT_VERIFIED`, `E_RECIPIENT_NOT_ALLOWED`, or a generic `email_send_failed`), never a
+provider message or response body. When no binding or sender is configured and `FEEDBACK_FORWARD_URL`
+is set, the Worker instead POSTs the same sanitized payload there under a bounded timeout, with
+`FEEDBACK_FORWARD_TOKEN` as a bearer credential when present. Delivery is attempted once per lifecycle
+event (submit, and again when the post node is attached) and never blocks or fails the accepted write.
+A 2xx moves the outbox row from `pending` to `delivered`; otherwise it stays `pending` with an
+incremented `attempts` count and a safe `last_error_code`. When nothing is configured nothing is
+forwarded and the row stays `pending`; retry, replay, and poison handling remain operator-owned.
 
 ## First-touch onboarding and service catalog
 

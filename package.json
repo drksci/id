@@ -1,8 +1,1 @@
-{
-  "name": "id-worker",
-  "private": true,
-  "type": "module",
-  "scripts": {
-    "test": "node --test tests/runtime.test.js tests/feedback.test.js tests/webhook.test.js tests/runtime-webhook.test.js tests/auth.test.js"
-  }
-}
+{"name":"id-worker","private":true,"type":"module","scripts":{"check:template":"npx --yes wrangler@4 deploy --dry-run --config wrangler.jsonc","test":"node --test tests/runtime.test.js tests/feedback.test.js tests/webhook.test.js tests/runtime-webhook.test.js tests/auth.test.js tests/template.test.js tests/feedback-nodes.test.js"}}

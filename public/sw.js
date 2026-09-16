@@ -1,4 +1,4 @@
-const CACHE_NAME = "drksci-id-shell-v1";
+const CACHE_NAME = "drksci-id-shell-v3";
 const SHELL = [
   "/",
   "/carte/",

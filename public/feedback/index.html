@@ -8,34 +8,66 @@
 <script src="/install.js" defer></script>
 <title>drksci / id — feedback</title>
 <style>
-:root{color-scheme:light}*{box-sizing:border-box}body{margin:0;padding:2rem 1.25rem;background:#efede6;color:#24231f;font:15px/1.6 ui-monospace,SFMono-Regular,Menlo,monospace}main{max-width:44rem;margin:auto}a{color:#24231f}.back{color:#68675f}h1{margin:2rem 0 .5rem;font:2rem/1.1 "Comic Sans MS","Bradley Hand",cursive;font-weight:500;letter-spacing:.06em}h2{margin:2rem 0 .5rem;font-size:1rem}p{max-width:40rem;color:#68675f}form{display:grid;gap:1rem;margin-top:1.5rem}label{display:grid;gap:.35rem;color:#24231f}input,textarea,button{font:inherit}input,textarea{width:100%;border:1px solid #68675f;border-radius:.3rem;background:#f8f6f0;color:#24231f;padding:.65rem}textarea{min-height:9rem;resize:vertical}input[readonly]{color:#68675f}button{border:1px solid #24231f;border-radius:.3rem;background:#24231f;color:#efede6;padding:.65rem .9rem;cursor:pointer}button.secondary{background:transparent;color:#24231f}button:disabled{cursor:not-allowed;opacity:.5}.actions{display:flex;flex-wrap:wrap;gap:.75rem}.hint{font-size:.85rem;color:#68675f;margin:0}.status{min-height:1.6em;margin:1rem 0;color:#24231f}.status[data-kind="error"]{color:#8a2f24}.status[data-kind="success"]{color:#2f5c3a}dialog{max-width:34rem;border:1px solid #24231f;background:#efede6;color:#24231f;padding:1.25rem}dialog::backdrop{background:#24231f66}dl{display:grid;grid-template-columns:max-content 1fr;gap:.4rem .9rem;font-size:.85rem}dt{color:#68675f}dd{margin:0;overflow-wrap:anywhere}@media(prefers-reduced-motion:reduce){*{scroll-behavior:auto!important;transition:none!important}}
+:root{color-scheme:light}*{box-sizing:border-box}body{margin:0;padding:2rem 1.25rem;background:#efede6;color:#24231f;font:15px/1.6 ui-monospace,SFMono-Regular,Menlo,monospace}main{max-width:44rem;margin:auto}a{color:#24231f}.back{color:#68675f}h1{margin:2rem 0 .5rem;font:2rem/1.1 "Comic Sans MS","Bradley Hand",cursive;font-weight:500;letter-spacing:.06em}h2{margin:2rem 0 .5rem;font-size:1rem}p{max-width:40rem;color:#68675f}form{display:grid;gap:1rem;margin-top:1.5rem}label{display:grid;gap:.35rem;color:#24231f}input,textarea,select,button{font:inherit}input,textarea,select{width:100%;border:1px solid #68675f;border-radius:.3rem;background:#f8f6f0;color:#24231f;padding:.65rem}textarea{min-height:9rem;resize:vertical}textarea.short{min-height:4.5rem}input[readonly]{color:#68675f}button{border:1px solid #24231f;border-radius:.3rem;background:#24231f;color:#efede6;padding:.65rem .9rem;cursor:pointer}button.secondary{background:transparent;color:#24231f}button:disabled{cursor:not-allowed;opacity:.5}.actions{display:flex;flex-wrap:wrap;gap:.75rem}.hint{font-size:.85rem;color:#68675f;margin:0}.status{min-height:1.6em;margin:1rem 0;color:#24231f}.status[data-kind="error"]{color:#8a2f24}.status[data-kind="success"]{color:#2f5c3a}dialog{max-width:34rem;border:1px solid #24231f;background:#efede6;color:#24231f;padding:1.25rem}dialog::backdrop{background:#24231f66}dl{display:grid;grid-template-columns:max-content 1fr;gap:.4rem .9rem;font-size:.85rem}dt{color:#68675f}dd{margin:0;overflow-wrap:anywhere}@media(prefers-reduced-motion:reduce){*{scroll-behavior:auto!important;transition:none!important}}
 </style>
 </head>
 <body>
 <main>
 <p><a class="back" href="/">drksci / id</a></p>
 <h1>Feedback</h1>
-<p><strong>Could this run smoother? What were you trying to do?</strong> Tell us what happened. The form sends a redacted report with a correlation ID; it never attaches cookies, credentials, tokens, or the current query string. Do not paste secrets.</p>
+<p><strong>Could this run smoother? What were you trying to do?</strong> Tell us what happened. The form sends a redacted report with a correlation ID; it never attaches cookies, credentials, tokens, or the current query string. It can also declare intent before the work (<code>feedback_pre</code>) and close the loop afterwards (<code>feedback_post</code>). Do not paste secrets.</p>
 <form id="feedback-form" novalidate>
 <label for="action">Action or surface
 <input id="action" name="action" maxlength="120" autocomplete="off" placeholder="for example, onboarding or access request">
 </label>
+<label for="objective">Objective <span class="hint">required for the intent node</span>
+<input id="objective" name="objective" maxlength="500" autocomplete="off" aria-describedby="intent-help" placeholder="one sentence: what you were trying to achieve">
+</label>
+<p id="intent-help" class="hint">Intent (<code>feedback_pre</code>) is sent only when the objective is filled in. The lists below take one entry per line.</p>
+<label for="objectives">Objectives, in order <span class="hint">optional; one per line</span>
+<textarea id="objectives" name="objectives" class="short" maxlength="6144" aria-describedby="intent-help"></textarea>
+</label>
+<label for="constraints">Constraints or non-goals <span class="hint">optional; one per line</span>
+<textarea id="constraints" name="constraints" class="short" maxlength="6144" aria-describedby="intent-help"></textarea>
+</label>
 <label for="expected">Expected outcome <span class="hint">optional</span>
-<input id="expected" name="expected" maxlength="500" autocomplete="off">
+<input id="expected" name="expected" maxlength="500" autocomplete="off" aria-describedby="intent-help">
+</label>
+<label for="outcome">Outcome
+<select id="outcome" name="outcome" aria-describedby="outcome-help">
+<option value="">not reported yet</option>
+<option value="achieved">achieved</option>
+<option value="partial">partial</option>
+<option value="not_achieved">not_achieved</option>
+<option value="blocked">blocked</option>
+<option value="unknown">unknown</option>
+</select>
+</label>
+<p id="outcome-help" class="hint">The closing report (<code>feedback_post</code>) is sent only when an outcome is selected; "not reported yet" omits the node.</p>
+<label for="message">What happened?
+<textarea id="message" name="message" maxlength="2000" required aria-describedby="sensitive-help" placeholder="Describe the smallest useful reproduction. Leave out credentials and private data."></textarea>
 </label>
 <label for="observed">Observed result <span class="hint">optional</span>
-<input id="observed" name="observed" maxlength="500" autocomplete="off">
-</label>
-<label for="message">What happened?
-<textarea id="message" name="message" maxlength="2000" required placeholder="Describe the smallest useful reproduction. Leave out credentials and private data."></textarea>
+<input id="observed" name="observed" maxlength="500" autocomplete="off" aria-describedby="outcome-help">
 </label>
 <label for="steps">Safe reproduction steps <span class="hint">optional; no tokens or private data</span>
-<textarea id="steps" name="steps" maxlength="1200"></textarea>
+<textarea id="steps" name="steps" maxlength="1200" aria-describedby="outcome-help"></textarea>
+</label>
+<label for="suggestion">Single most helpful change <span class="hint">optional</span>
+<input id="suggestion" name="suggestion" maxlength="512" autocomplete="off" aria-describedby="suggestion-help">
+</label>
+<label for="suggestions">Structured suggestions <span class="hint">optional; one per line as kind: recommendation</span>
+<textarea id="suggestions" name="suggestions" class="short" maxlength="6144" aria-describedby="suggestion-help" placeholder="documentation: show the detected provider earlier"></textarea>
+</label>
+<p id="suggestion-help" class="hint">Allowed kinds: fix, improvement, documentation, tooling, policy. Lines without a valid kind are ignored.</p>
+<label for="follow-ups">Follow-ups <span class="hint">optional; one open question per line</span>
+<textarea id="follow-ups" name="follow_ups" class="short" maxlength="6144" aria-describedby="outcome-help"></textarea>
 </label>
 <label for="correlation-id">Correlation ID
 <input id="correlation-id" name="correlation_id" readonly aria-describedby="correlation-help">
 </label>
 <p id="correlation-help" class="hint">Keep this ID if you need to discuss the report later.</p>
+<p id="sensitive-help" class="hint">Leave out credentials, tokens, cookies, authorization headers, query strings, private repository data, and tool output. MCP instructions, prompts, and tool results must never be pasted into either node; secret redaction is best effort and recognises only known shapes.</p>
 <div class="actions"><button type="submit" id="send">Send feedback</button><button type="button" class="secondary" id="retry" hidden>Retry pending report</button><button type="button" class="secondary" id="debug">Review debug context</button></div>
 </form>
 <p id="status" class="status" role="status" aria-live="polite"></p>
@@ -44,7 +76,7 @@
 <dialog id="debug-dialog" aria-labelledby="debug-title">
 <h2 id="debug-title">Debug context</h2>
 <p>These values are safe selectors and diagnostics. The feedback request omits the query string and browser credentials.</p>
-<dl><dt>Page path</dt><dd id="debug-path"></dd><dt>Action</dt><dd id="debug-action"></dd><dt>Correlation ID</dt><dd id="debug-correlation"></dd><dt>Endpoint</dt><dd>/api/v1/feedback</dd></dl>
+<dl><dt>Page path</dt><dd id="debug-path"></dd><dt>Action</dt><dd id="debug-action"></dd><dt>Correlation ID</dt><dd id="debug-correlation"></dd><dt>Nodes</dt><dd id="debug-nodes"></dd><dt>Endpoint</dt><dd>/api/v1/feedback</dd></dl>
 <form method="dialog"><button class="secondary">Close</button></form>
 </dialog>
 <script>
@@ -52,12 +84,23 @@
   const ENDPOINT = "/api/v1/feedback";
   const PENDING_KEY = "drksci.id.feedback.pending";
   const MAX_MESSAGE_LENGTH = 2000;
+  const MAX_LINE_LENGTH = 512;
+  const MAX_ITEMS = 12;
+  const OUTCOMES = ["achieved", "partial", "not_achieved", "blocked", "unknown"];
+  const SUGGESTION_KINDS = ["fix", "improvement", "documentation", "tooling", "policy"];
   const form = document.querySelector("#feedback-form");
   const action = document.querySelector("#action");
   const expected = document.querySelector("#expected");
   const observed = document.querySelector("#observed");
   const message = document.querySelector("#message");
   const steps = document.querySelector("#steps");
+  const objective = document.querySelector("#objective");
+  const objectives = document.querySelector("#objectives");
+  const constraints = document.querySelector("#constraints");
+  const outcome = document.querySelector("#outcome");
+  const suggestion = document.querySelector("#suggestion");
+  const suggestionsInput = document.querySelector("#suggestions");
+  const followUpsInput = document.querySelector("#follow-ups");
   const correlation = document.querySelector("#correlation-id");
   const send = document.querySelector("#send");
   const retry = document.querySelector("#retry");
@@ -99,16 +142,60 @@
     status.dataset.kind = kind || "";
   }
 
+    function lineList(value) {
+    return String(value || "").split(/\r?\n/).map((line) => clean(line, MAX_LINE_LENGTH)).filter(Boolean).slice(0, MAX_ITEMS);
+  }
+
+  function suggestionList(value) {
+    return String(value || "").split(/\r?\n/).map((line) => line.trim()).filter(Boolean).map((line) => {
+      const separator = line.indexOf(":");
+      if (separator < 1) return null;
+      const kind = clean(line.slice(0, separator), 40).toLowerCase();
+      const recommendation = clean(line.slice(separator + 1), MAX_LINE_LENGTH);
+      if (!SUGGESTION_KINDS.includes(kind) || !recommendation) return null;
+      return { kind, recommendation };
+    }).filter(Boolean).slice(0, MAX_ITEMS);
+  }
+
   function payloadFromForm() {
-    return {
+    const objectiveValue = clean(objective.value, 500);
+    const expectedValue = clean(expected.value, 500);
+    const observedValue = clean(observed.value, 500);
+    const stepsValue = clean(steps.value, 1200);
+    const outcomeValue = clean(outcome.value, 40);
+    const payload = {
       action: clean(action.value || "general", 120),
-      expected_outcome: clean(expected.value, 500),
-      observed_result: clean(observed.value, 500),
       message: clean(message.value, MAX_MESSAGE_LENGTH),
-      reproduction_steps: clean(steps.value, 1200),
       correlation_id: safeCorrelation(correlation.value),
       page_path: window.location.pathname
     };
+    if (objectiveValue) {
+      const pre = { objective: objectiveValue };
+      const objectivesList = lineList(objectives.value);
+      if (objectivesList.length) pre.objectives = objectivesList;
+      const constraintsList = lineList(constraints.value);
+      if (constraintsList.length) pre.constraints = constraintsList;
+      if (expectedValue) pre.expected_outcome = expectedValue;
+      payload.feedback_pre = pre;
+    } else if (expectedValue) {
+      payload.expected_outcome = expectedValue;
+    }
+    if (OUTCOMES.includes(outcomeValue)) {
+      const post = { outcome: outcomeValue };
+      if (observedValue) post.observed_result = observedValue;
+      if (stepsValue) post.reproduction_steps = stepsValue;
+      const suggestionValue = clean(suggestion.value, MAX_LINE_LENGTH);
+      if (suggestionValue) post.suggestion = suggestionValue;
+      const suggestionEntries = suggestionList(suggestionsInput.value);
+      if (suggestionEntries.length) post.suggestions = suggestionEntries;
+      const followUpList = lineList(followUpsInput.value);
+      if (followUpList.length) post.follow_ups = followUpList;
+      payload.feedback_post = post;
+    } else {
+      if (observedValue) payload.observed_result = observedValue;
+      if (stepsValue) payload.reproduction_steps = stepsValue;
+    }
+    return payload;
   }
 
   function storePending(payload) {
@@ -152,8 +239,10 @@
   form.addEventListener("submit", async (event) => {
     event.preventDefault();
     if (!message.value.trim()) { setStatus("Add a short description before sending feedback.", "error"); message.focus(); return; }
+    const payload = payloadFromForm();
+    document.querySelector("#debug-nodes").textContent = [payload.feedback_pre ? "feedback_pre" : "", payload.feedback_post ? "feedback_post" : ""].filter(Boolean).join(", ") || "none";
     send.disabled = true;
-    await submitPayload(payloadFromForm());
+    await submitPayload(payload);
     send.disabled = false;
   });
 

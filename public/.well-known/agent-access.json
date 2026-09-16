@@ -24,8 +24,17 @@
   "request": {
     "method": "POST",
     "path": "/api/v1/access-requests",
-    "authentication": ["short-lived-agent-token", "cloudflare-access"],
-    "required": ["actor_id", "resource", "actions", "environment", "expires_at"]
+    "authentication": [
+      "short-lived-agent-token",
+      "cloudflare-access"
+    ],
+    "required": [
+      "actor_id",
+      "resource",
+      "actions",
+      "environment",
+      "expires_at"
+    ]
   },
   "feedback": {
     "enabled_flag": "FEEDBACK_ENABLED",
@@ -33,14 +42,87 @@
     "submit": {
       "method": "POST",
       "path": "/api/v1/feedback",
-      "fields": ["action", "expected_outcome", "observed_result", "message", "reproduction_steps", "correlation_id", "page_path"],
-      "privacy": "omit secrets, tokens, cookies, credentials, and query strings; sanitize before mirror or outbox"
+      "fields": [
+        "action",
+        "expected_outcome",
+        "observed_result",
+        "message",
+        "reproduction_steps",
+        "correlation_id",
+        "page_path"
+      ],
+      "privacy": "omit secrets, tokens, cookies, credentials, and query strings; sanitize before mirror or outbox; never include MCP instructions, prompts, or tool output in either node",
+      "nodes": {
+        "feedback_pre": {
+          "meaning": "declared intent before or while the work happens: the objective and the order of objectives",
+          "required": [
+            "objective"
+          ],
+          "optional": [
+            "objectives",
+            "constraints",
+            "expected_outcome",
+            "context"
+          ],
+          "unknown_keys": "rejected"
+        },
+        "feedback_post": {
+          "meaning": "closing report after the work happens: the outcome and what would have made it smoother",
+          "required": [
+            "outcome"
+          ],
+          "outcome_values": [
+            "achieved",
+            "partial",
+            "not_achieved",
+            "blocked",
+            "unknown"
+          ],
+          "optional": [
+            "observed_result",
+            "reproduction_steps",
+            "suggestion",
+            "suggestions",
+            "follow_ups"
+          ],
+          "suggestion_keys": [
+            "kind",
+            "recommendation",
+            "confidence",
+            "evidence"
+          ],
+          "unknown_keys": "rejected"
+        }
+      },
+      "complete": {
+        "method": "POST",
+        "path": "/api/v1/feedback/{feedback_id}/complete",
+        "body": [
+          "feedback_post"
+        ],
+        "mcp_tool": "complete_feedback",
+        "authority": "submitting subject only; a record is completed at most once"
+      },
+      "forwarding": {
+        "native_binding": "send_email",
+        "binding_name": "EMAIL",
+        "binding_default_address": "destination_address",
+        "sender_env": "FEEDBACK_FORWARD_FROM",
+        "recipient_override_env": "FEEDBACK_FORWARD_TO",
+        "https_fallback_env": "FEEDBACK_FORWARD_URL",
+        "token_env": "FEEDBACK_FORWARD_TOKEN",
+        "unconfigured": "recorded_pending_only; nothing is forwarded"
+      }
     },
     "prompt": "Could this run smoother? What were you trying to do?"
   },
   "onboarding": {
     "page": "/onboarding/",
-    "steps": ["github_app_installation", "cloudflare_application_authorization", "dns_cname_txt_verification"],
+    "steps": [
+      "github_app_installation",
+      "cloudflare_application_authorization",
+      "dns_cname_txt_verification"
+    ],
     "approval_required_before_provider_permissions": true,
     "return_url_policy": "same_origin_path_only",
     "oauth_flow": "server_issued_state_and_pkce; reuse_existing_approved_github_session_when_available",
@@ -52,11 +134,22 @@
       "deploy_workflow": "https://github.com/drksci/id/actions/workflows/deploy-id-worker.yml",
       "approval_required": true
     },
-    "required_deployment_inputs": ["CLOUDFLARE_ACCOUNT_ID", "CLOUDFLARE_API_TOKEN", "D1_DATABASE_ID_*", "FEEDBACK_ENABLED", "ASSISTANT_ENABLED"]
+    "required_deployment_inputs": [
+      "CLOUDFLARE_ACCOUNT_ID",
+      "CLOUDFLARE_API_TOKEN",
+      "D1_DATABASE_ID_*",
+      "FEEDBACK_ENABLED",
+      "ASSISTANT_ENABLED"
+    ]
   },
   "catalog": {
     "page": "/catalog/",
-    "verification_states": ["verified", "pending", "unverified", "disabled"],
+    "verification_states": [
+      "verified",
+      "pending",
+      "unverified",
+      "disabled"
+    ],
     "pending_onboarding_is_non_authoritative": true,
     "workspace_parent_child_template": "<child>.<parent>.id.drksci.com"
   },
@@ -78,5 +171,11 @@
     "requires_authenticated_human": true,
     "notifications_are_non_authoritative": true
   },
-  "environments": ["local", "dev", "preview", "staging", "production"]
+  "environments": [
+    "local",
+    "dev",
+    "preview",
+    "staging",
+    "production"
+  ]
 }

@@ -31,6 +31,10 @@ function parseJson(value, fallback = []) {
   try { return JSON.parse(value); } catch { return fallback; }
 }
 
+function outboxPayload(record) {
+  return { schema: SCHEMA.FEEDBACK, feedback_id: record.feedback_id, correlation_id: record.correlation_id, message: record.message, severity: record.severity, metadata: record.metadata, feedback_pre: record.feedback_pre, feedback_post: record.feedback_post };
+}
+
 function requestRow(row) {
   if (!row) return null;
   return {
@@ -73,7 +77,7 @@ function grantRow(row) {
 
 function feedbackRow(row) {
   if (!row) return null;
-  return { schema: SCHEMA.FEEDBACK, feedback_id: row.feedback_id, actor_subject_hash: row.actor_subject_hash, actor_kind: row.actor_kind, correlation_id: row.correlation_id, prompt_id: row.prompt_id, workspace: row.workspace, environment: row.environment, resource: row.resource, event: row.event, action: row.action, context: parseJson(row.context_json, undefined), expected_outcome: row.expected_outcome, observed_result: row.observed_result, reproduction_steps: row.reproduction_steps, severity: row.severity, message: row.message, metadata: parseJson(row.metadata_json, {}), created_at: row.created_at, updated_at: row.updated_at, status: row.status, idempotency_key: row.idempotency_key };
+  return { schema: SCHEMA.FEEDBACK, feedback_id: row.feedback_id, actor_subject_hash: row.actor_subject_hash, actor_kind: row.actor_kind, correlation_id: row.correlation_id, prompt_id: row.prompt_id, workspace: row.workspace, environment: row.environment, resource: row.resource, event: row.event, action: row.action, context: parseJson(row.context_json, undefined), expected_outcome: row.expected_outcome, observed_result: row.observed_result, reproduction_steps: row.reproduction_steps, severity: row.severity, message: row.message, metadata: parseJson(row.metadata_json, {}), created_at: row.created_at, updated_at: row.updated_at, status: row.status, feedback_pre: parseJson(row.feedback_pre_json, undefined), feedback_post: parseJson(row.feedback_post_json, undefined), completed_at: row.completed_at || undefined, idempotency_key: row.idempotency_key };
 }
 
 function onboardingRow(row) {
@@ -199,14 +203,27 @@ export class D1Store {
   async createFeedbackWithIdempotency(record, response) {
     if (!this.db || typeof this.db.batch !== "function") unavailable();
     await this.db.batch([
-      this.prepare(`INSERT INTO ${TABLE.FEEDBACK} (feedback_id, actor_subject_hash, actor_kind, correlation_id, prompt_id, workspace, environment, resource, event, action, context_json, expected_outcome, observed_result, reproduction_steps, severity, message, metadata_json, created_at, updated_at, status, idempotency_key) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, record.feedback_id, record.actor_subject_hash, record.actor_kind, record.correlation_id, record.prompt_id, record.workspace, record.environment, record.resource, record.event, record.action, record.context ? JSON.stringify(record.context) : null, record.expected_outcome, record.observed_result, record.reproduction_steps, record.severity, record.message, JSON.stringify(record.metadata), record.created_at, record.updated_at, record.status, record.idempotency_key),
-      this.prepare(`INSERT INTO ${TABLE.OUTBOX} (outbox_id, feedback_id, payload_json, status, created_at) VALUES (?, ?, ?, ?, ?)`, record.feedback_id, record.feedback_id, JSON.stringify({ feedback_id: record.feedback_id, schema: SCHEMA.FEEDBACK, message: record.message, metadata: record.metadata }), "pending", record.created_at),
+      this.prepare(`INSERT INTO ${TABLE.FEEDBACK} (feedback_id, actor_subject_hash, actor_kind, correlation_id, prompt_id, workspace, environment, resource, event, action, context_json, expected_outcome, observed_result, reproduction_steps, severity, message, metadata_json, feedback_pre_json, feedback_post_json, completed_at, created_at, updated_at, status, idempotency_key) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, record.feedback_id, record.actor_subject_hash, record.actor_kind, record.correlation_id, record.prompt_id, record.workspace, record.environment, record.resource, record.event, record.action, record.context ? JSON.stringify(record.context) : null, record.expected_outcome, record.observed_result, record.reproduction_steps, record.severity, record.message, JSON.stringify(record.metadata), record.feedback_pre ? JSON.stringify(record.feedback_pre) : null, record.feedback_post ? JSON.stringify(record.feedback_post) : null, record.completed_at || null, record.created_at, record.updated_at, record.status, record.idempotency_key),
+      this.prepare(`INSERT INTO ${TABLE.OUTBOX} (outbox_id, feedback_id, payload_json, status, created_at) VALUES (?, ?, ?, ?, ?)`, `${record.feedback_id}:pre`, record.feedback_id, JSON.stringify(outboxPayload(record)), "pending", record.created_at),
       this.prepare(`INSERT INTO ${TABLE.IDEMPOTENCY} (actor_id, idempotency_key, response_json, created_at) VALUES (?, ?, ?, ?)`, record.actor_subject_hash, record.idempotency_key, JSON.stringify(response), record.created_at),
     ]);
   }
 
   async getFeedback(feedbackId) {
     return feedbackRow(await this.prepare(`SELECT * FROM ${TABLE.FEEDBACK} WHERE feedback_id = ?`, feedbackId).first());
+  }
+
+  async attachFeedbackPost(feedbackId, update, updatedAt) {
+    const result = await this.prepare(`UPDATE ${TABLE.FEEDBACK} SET feedback_post_json = ?, observed_result = ?, reproduction_steps = ?, completed_at = ?, updated_at = ? WHERE feedback_id = ? AND feedback_post_json IS NULL`, JSON.stringify(update.feedback_post), update.observed_result, update.reproduction_steps, updatedAt, updatedAt, feedbackId).run();
+    return Number(result?.meta?.changes || 0) === 1;
+  }
+
+  async enqueueFeedbackOutbox(outboxId, record, createdAt) {
+    await this.prepare(`INSERT OR IGNORE INTO ${TABLE.OUTBOX} (outbox_id, feedback_id, payload_json, status, created_at) VALUES (?, ?, ?, ?, ?)`, outboxId, record.feedback_id, JSON.stringify(outboxPayload(record)), "pending", createdAt).run();
+  }
+
+  async markFeedbackOutbox(outboxId, update) {
+    await this.prepare(`UPDATE ${TABLE.OUTBOX} SET status = ?, attempts = attempts + 1, delivered_at = COALESCE(?, delivered_at), last_error_code = ? WHERE outbox_id = ?`, update.status, update.delivered_at || null, update.error_code || null, outboxId).run();
   }
 
   async createFeedbackSuggestion(record) {
