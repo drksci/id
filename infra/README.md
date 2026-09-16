@@ -78,10 +78,14 @@ reserved labels and verified bindings before provisioning any wildcard.
    `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`, `VAPID_SUBJECT`, `GITHUB_APP_ID`,
    `GITHUB_APP_PRIVATE_KEY`, and `GITHUB_WEBHOOK_SECRET`. The App private key and webhook secret
    are separate values and must be rotated independently.
-5. Provision the deployment-owned Access configuration for each Worker environment using the
-   names `ACCESS_ISSUER`, `ACCESS_JWKS_URL`, `ACCESS_AUDIENCE`, `ACCESS_AGENT_SCOPES`, and
-   `ACCESS_HUMAN_SCOPES`. Keep the values in the deployment secret/config store and out of this
-   repository; the checked-in config intentionally contains names and no Access values.
+5. Provision the deployment-owned Access configuration for each Worker environment. The explicit
+   names `ACCESS_ISSUER`, `ACCESS_JWKS_URL`, and `ACCESS_AUDIENCE` remain supported. For the
+   one-time setup, `ACCESS_TEAM_DOMAIN` may replace the first two: set it to the Cloudflare Access
+   team domain (for example `team.example.cloudflareaccess.com`), and the Worker derives the issuer
+   as `https://<team-domain>` and JWKS as
+   `https://<team-domain>/cdn-cgi/access/certs`. The audience defaults to `id-worker` only when
+   no audience is configured. Keep these values in the deployment secret/config store and out of
+   this repository; an absent or invalid team domain still fails closed.
 6. Apply D1 migrations from the worker implementation before the first deployment. When the
    implementation introduces migrations, add its migrations directory to this config and verify
    the migration list against the target database; retain the output as release evidence.
