@@ -72,16 +72,21 @@ GitHub Actions use OIDC and repository/environment secrets; Cloudflare Workers
 use Wrangler secrets and bindings. Use native secret features and never commit
 credentials. Derive workspace/environment from trusted repo and gateway policy.
 Without MCP/OAuth, print or open the authenticated `/ask/{request_id}` URL.
-Back up policy/audit to `drksci/id-data`; D1 is live state and its outbox must
-be replayable.
+D1 is live state. There is no `drksci/id-data` mirror: no such repository exists and no code reads
+`DURABLE_REPOSITORY`, which has been removed from `infra/wrangler.toml`.
 
 ## Feedback and first-touch onboarding
 
 Could this run smoother? What were you trying to do? Use `/feedback/` with the action,
 expected outcome, observed result, safe reproduction steps, correlation ID, and path-only page
 context. Sanitize before `POST /api/v1/feedback`; omit secrets, tokens, cookies, credentials,
-query strings, and local git credential helpers. `FEEDBACK_ENABLED` controls availability. The
-sanitized `feedback.md` mirror/outbox uses bounded retries and a poison queue for repeated failures.
+query strings, and local git credential helpers. `FEEDBACK_ENABLED` controls availability.
+
+Two things stated here previously are not true of this implementation. The endpoint authenticates its
+caller, so the public page -- which sends no credentials -- cannot submit. And there is no mirror,
+outbox drainer, retry or poison queue: `feedback_outbox` was dropped in `0004_retire_feedback_outbox.sql`
+because nothing ever read it. See [`feedback.md`](../../feedback.md), which records what is and is not
+built.
 
 Use `/onboarding/` for GitHub App installation, Cloudflare authorization, and DNS CNAME/TXT
 verification. Detect a repository from its git remote and a service URL from trusted context, but
