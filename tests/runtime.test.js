@@ -8,11 +8,13 @@ import {
   approveAccessRequest,
   backupIdentity,
   dispatchMcp,
+  getGrant,
   handleRequest,
   intersectScope,
   requestAccess,
   restoreIdentity,
 } from "../src/runtime.js";
+import { D1Store } from "../src/storage.js";
 
 const NOW = new Date("2026-09-17T00:00:00.000Z");
 const agent = {
@@ -27,7 +29,7 @@ const human = {
 };
 
 class Store {
-  constructor() { this.requests = new Map(); this.idempotency = new Map(); this.grants = new Map(); this.backups = new Map(); }
+  constructor({ parentGrant = null, approver = true, revoked = false } = {}) { this.requests = new Map(); this.idempotency = new Map(); this.grants = new Map(); this.backups = new Map(); this.parentGrant = parentGrant; this.approver = approver; this.revoked = revoked; }
   async getRequest(id) { return this.requests.get(id); }
   async createRequest(record) { this.requests.set(record.request_id, record); }
   async transitionRequest(id, expected, update) {
@@ -40,6 +42,9 @@ class Store {
   async putIdempotency(actor, key, value) { this.idempotency.set(`${actor}:${key}`, value); }
   async createGrant(grant) { this.grants.set(grant.grant_id, grant); }
   async getGrant(id) { return this.grants.get(id); }
+  async getActiveGrant() { return this.parentGrant; }
+  async isRevoked() { return this.revoked; }
+  async isApprover() { return this.approver; }
   async putBackup(backup) { this.backups.set(backup.backup_id, backup); }
   async getBackup(id) { return this.backups.get(id); }
   async registerAgent() {}
@@ -97,4 +102,57 @@ test("MCP dispatch exposes registration, request, grant and backup methods", asy
   const result = await dispatchMcp({ jsonrpc: "2.0", id: 1, method: "backup_identity", params: { envelope: { algorithm: "AES-GCM", nonce: "bm9uY2U", ciphertext: "Y2lwaGVydGV4dA" } } }, { subject: agent, store });
   assert.equal(result.stored, true);
   await assert.rejects(() => dispatchMcp({ jsonrpc: "2.0", id: 2, method: "restore_identity", params: { backup_id: result.backup_id, proof: { challenge: "x", signature: "y" } } }, { subject: agent, store, env: {} }), (error) => error.code === "authorization_required");
+});
+
+test("policy binds requests to workspace and runtime environment", async () => {
+  const store = new Store();
+  const policy = { workspace: "workspace://drksci/alphaville_foundary/dev", resource: "github:alphaville-foundry/alphaville_foundary", environment: "dev" };
+  const result = await requestAccess({ subject: agent, store, policy, now: NOW, randomId: () => "request_policy_123456789", request: requestBody({ workspace: policy.workspace }) });
+  assert.equal(result.status, STATUS.PENDING);
+  await assert.rejects(() => requestAccess({ subject: agent, store, policy, now: NOW, randomId: () => "request_policy_987654321", request: requestBody({ workspace: "workspace://other/dev", idempotency_key: "idem-other" }) }), (error) => error.code === "workspace_mismatch");
+});
+
+test("health is public while readiness fails closed without a complete D1 schema", async () => {
+  const health = await handleRequest(new Request("https://id.drksci.com/healthz"), {});
+  assert.equal(health.status, 200);
+  const missing = await handleRequest(new Request("https://id.drksci.com/readyz"), {});
+  assert.equal(missing.status, 503);
+  const db = {
+    prepare(sql) {
+      return {
+        bind() { return this; },
+        async all() { return { results: [{ name: "access_requests" }, { name: "grants" }, { name: "idempotency_keys" }, { name: "identity_backups" }, { name: "revoked_grants" }] }; },
+      };
+    },
+  };
+  const ready = await handleRequest(new Request("https://id.drksci.com/readyz"), { DB: db });
+  assert.equal(ready.status, 200);
+});
+
+test("D1 request creation uses one batch for request plus idempotency", async () => {
+  const batches = [];
+  const db = {
+    prepare(sql) {
+      return { bind(...values) { return { sql, values, async run() { return { meta: { changes: 1 } }; } }; } };
+    },
+    async batch(statements) { batches.push(statements); },
+  };
+  const store = new D1Store(db);
+  await store.createRequestWithIdempotency({ request_id: "request_d1_123456789", actor_id: agent.sub, parent_id: agent.parent_id, resource: "r", actions: ["a"], environment: "dev", reason: "test", requested_at: NOW.toISOString(), expires_at: "2026-09-17T00:30:00.000Z", status: STATUS.PENDING, idempotency_key: "idem-d1" }, { request_id: "request_d1_123456789" });
+  assert.equal(batches.length, 1);
+  assert.equal(batches[0].length, 2);
+});
+
+test("policy requires a live parent grant and active approver", async () => {
+  const policy = { workspace: "workspace://drksci/alphaville_foundary/dev", resource: "github:alphaville-foundry/alphaville_foundary", environment: "dev", requireParentGrant: true, requireApproverRecord: true };
+  const parentGrant = { grant_id: "parent_grant_123456789", subject_id: agent.parent_id, parent_id: "agent://id/dev/root", workspace: policy.workspace, resource: policy.resource, actions: ["contents:read"], environment: "dev", expires_at: "2026-09-17T00:45:00.000Z" };
+  const store = new Store({ parentGrant, approver: true });
+  const created = await requestAccess({ subject: agent, request: requestBody({ workspace: policy.workspace }), policy, store, now: NOW, randomId: () => "request_bound_123456789" });
+  const grant = await approveAccessRequest({ requestId: created.request_id, subject: human, decision: DECISION.APPROVE, policy, store, now: NOW, grantId: "grant_bound_123456789" });
+  assert.equal(grant.workspace, policy.workspace);
+  store.revoked = true;
+  await assert.rejects(() => getGrant({ grantId: grant.grant_id, subject: agent, policy: { ...policy, requireParentGrant: false, requireRevocation: true }, store, now: NOW }), (error) => error.code === "grant_revoked");
+  const denied = new Store({ parentGrant, approver: false });
+  const pending = await requestAccess({ subject: agent, request: requestBody({ workspace: policy.workspace, idempotency_key: "idem-denied" }), policy, store: denied, now: NOW, randomId: () => "request_bound_987654321" });
+  await assert.rejects(() => approveAccessRequest({ requestId: pending.request_id, subject: human, decision: DECISION.APPROVE, policy, store: denied, now: NOW }), (error) => error.code === "approver_not_allowed");
 });

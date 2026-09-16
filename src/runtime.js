@@ -1,3 +1,5 @@
+import { createD1Store } from "./storage.js";
+
 /**
  * Small, dependency-free authorization primitives for the id-worker.
  *
@@ -33,6 +35,7 @@ export const ENVIRONMENT = Object.freeze({
   DEV: "dev",
   PREVIEW: "preview",
   STAGING: "staging",
+  TEST: "test",
   PRODUCTION: "production",
 });
 const ENVIRONMENTS = new Set(Object.values(ENVIRONMENT));
@@ -79,6 +82,29 @@ function actions(value, field = "actions") {
 export function normalizeEnvironment(value) {
   // Unknown or omitted environments are handled as production policy.
   return ENVIRONMENTS.has(value) ? value : ENVIRONMENT.PRODUCTION;
+}
+
+export function runtimePolicy(env = {}) {
+  const workspace = env.WORKSPACE || env.ID_WORKSPACE;
+  const resource = env.RESOURCE || env.ID_RESOURCE;
+  if (typeof workspace !== "string" || workspace.length === 0 || typeof resource !== "string" || resource.length === 0 || typeof env.APP_ENV !== "string" || env.APP_ENV.length === 0) {
+    fail("policy_unavailable", "workspace, resource, and runtime environment policy are required");
+  }
+  const approvers = Array.isArray(env.APPROVERS) ? env.APPROVERS : typeof env.APPROVERS === "string" ? env.APPROVERS.split(",").map((value) => value.trim()).filter(Boolean) : [];
+  return Object.freeze({ workspace, resource, environment: normalizeEnvironment(env.APP_ENV), approvers, requireParentGrant: true, requireApproverRecord: true, requireRevocation: true });
+}
+
+function enforcePolicy(scope, policy) {
+  if (!policy) return;
+  if (scope.workspace !== policy.workspace) fail("workspace_mismatch", "scope is outside the registered workspace", 403);
+  if (policy.resource && scope.resource !== policy.resource) fail("resource_mismatch", "resource is outside the registered policy", 403);
+  if (scope.environment !== policy.environment) fail("environment_mismatch", "scope is outside the Worker environment", 403);
+}
+
+function requestWorkspace(request, policy) {
+  if (!policy) return request.workspace;
+  if (typeof request.workspace !== "string" || request.workspace.length === 0) fail("workspace_required", "workspace is required", 400);
+  return request.workspace;
 }
 
 export function parseSubjectClaim(input) {
@@ -148,13 +174,28 @@ function requireMethod(store, method) {
   if (typeof store[method] !== "function") fail("storage_unavailable", `storage method ${method} is unavailable`);
 }
 
-export async function requestAccess({ subject, request, store, now = new Date(), randomId } = {}) {
+function storeForEnv(env) {
+  if (env?.STORE) return env.STORE;
+  if (env?.DB) return createD1Store(env.DB);
+  fail("storage_unavailable", "authorization storage is unavailable");
+}
+
+export async function requestAccess({ subject, request, store, policy, now = new Date(), randomId } = {}) {
   requireStore(store);
   const agent = assertLiveSubject(subject, now);
   if (agent.kind !== SUBJECT_KIND.AGENT) fail("agent_required", "only an agent may request access", 403);
   const body = request || {};
   if (body.actor_id !== agent.sub) fail("subject_mismatch", "actor_id must match the authenticated agent", 403);
   const scope = intersectScope({ ...agent, scopes: agent.scopes }, body, now);
+  const workspace = requestWorkspace(body, policy);
+  enforcePolicy({ ...scope, workspace }, policy);
+  let boundedScope = scope;
+  if (policy?.requireParentGrant) {
+    requireMethod(store, "getActiveGrant");
+    const parentGrant = await store.getActiveGrant(agent.parent_id, scope.resource, scope.environment, now);
+    if (!parentGrant || parentGrant.workspace !== workspace) fail("parent_grant_unavailable", "active parent grant is required", 403);
+    boundedScope = intersectScope({ ...agent, scopes: parentGrant.actions, environment: parentGrant.environment, expires_at: parentGrant.expires_at }, body, now);
+  }
   const requestId = opaqueId(randomId);
   const idempotencyKey = text(body.idempotency_key, "idempotency_key");
   const record = Object.freeze({
@@ -162,12 +203,13 @@ export async function requestAccess({ subject, request, store, now = new Date(),
     request_id: requestId,
     actor_id: agent.sub,
     parent_id: agent.parent_id,
-    resource: scope.resource,
-    actions: scope.actions,
-    environment: scope.environment,
+    workspace,
+    resource: boundedScope.resource,
+    actions: boundedScope.actions,
+    environment: boundedScope.environment,
     reason: text(body.reason, "reason"),
     requested_at: new Date(now).toISOString(),
-    expires_at: scope.expires_at,
+    expires_at: boundedScope.expires_at,
     status: STATUS.PENDING,
     ask_path: `/ask/${requestId}`,
     idempotency_key: idempotencyKey,
@@ -176,55 +218,80 @@ export async function requestAccess({ subject, request, store, now = new Date(),
   requireMethod(store, "getIdempotency");
   const prior = await store.getIdempotency(agent.sub, idempotencyKey);
   if (prior) return prior;
-  await store.createRequest(record);
   const response = { request_id: requestId, status: STATUS.PENDING, ask_path: record.ask_path, expires_at: record.expires_at };
-  requireMethod(store, "putIdempotency");
-  await store.putIdempotency(agent.sub, idempotencyKey, response);
+  if (typeof store.createRequestWithIdempotency === "function") {
+    await store.createRequestWithIdempotency(record, response);
+  } else {
+    await store.createRequest(record);
+    requireMethod(store, "putIdempotency");
+    await store.putIdempotency(agent.sub, idempotencyKey, response);
+  }
   return response;
 }
 
-export async function readAccessRequest({ requestId, subject, store, now = new Date() } = {}) {
+export async function readAccessRequest({ requestId, subject, store, policy, now = new Date() } = {}) {
   const human = assertLiveSubject(subject, now);
   if (human.kind !== SUBJECT_KIND.HUMAN) fail("human_required", "an authenticated human is required", 403);
   const id = text(requestId, "request_id");
   const request = await requireStore(store).getRequest(id);
   if (!request) fail("not_found", "access request not found", 404);
+  enforcePolicy(request, policy);
   if (request.status === STATUS.PENDING && Date.parse(request.expires_at) <= now.getTime()) {
     await store.transitionRequest(id, STATUS.PENDING, { status: STATUS.EXPIRED });
     fail("scope_expired", "access request has expired", 410);
   }
-  return { request_id: request.request_id, actor_id: request.actor_id, resource: request.resource, actions: request.actions, environment: request.environment, reason: request.reason, expires_at: request.expires_at, status: request.status };
+  return { request_id: request.request_id, actor_id: request.actor_id, parent_id: request.parent_id, workspace: request.workspace, resource: request.resource, actions: request.actions, environment: request.environment, reason: request.reason, expires_at: request.expires_at, status: request.status };
 }
 
-export async function approveAccessRequest({ requestId, subject, decision, store, now = new Date(), grantId } = {}) {
+export async function approveAccessRequest({ requestId, subject, decision, store, policy, now = new Date(), grantId } = {}) {
   const human = assertLiveSubject(subject, now);
   if (human.kind !== SUBJECT_KIND.HUMAN) fail("human_required", "only an authenticated human may approve", 403);
   if (decision !== DECISION.APPROVE && decision !== DECISION.DECLINE) fail("invalid_decision", "decision must be approve or decline", 400);
   const request = await requireStore(store).getRequest(text(requestId, "request_id"));
   if (!request) fail("not_found", "access request not found", 404);
+  enforcePolicy(request, policy);
+  if (policy?.approvers?.length && !policy.approvers.includes(human.sub)) fail("approver_not_allowed", "human is not an approver for this workspace", 403);
+  if (policy?.requireApproverRecord) {
+    requireMethod(store, "isApprover");
+    if (!(await store.isApprover(human.sub, request.workspace))) fail("approver_not_allowed", "human is not an active approver", 403);
+  }
+  if (policy?.requireParentGrant) {
+    requireMethod(store, "getActiveGrant");
+    const parentGrant = await store.getActiveGrant(request.parent_id, request.resource, request.environment, now);
+    if (!parentGrant || parentGrant.workspace !== request.workspace || request.actions.some((action) => !parentGrant.actions.includes(action))) fail("parent_grant_unavailable", "active parent grant is required", 403);
+  }
   if (request.status !== STATUS.PENDING) fail("replayed_request", "access request has already been consumed", 409);
   if (Date.parse(request.expires_at) <= now.getTime()) {
     await store.transitionRequest(request.request_id, STATUS.PENDING, { status: STATUS.EXPIRED });
     fail("scope_expired", "access request has expired", 410);
   }
-  if (decision === DECISION.APPROVE) requireMethod(store, "createGrant");
-  const update = { status: decision === DECISION.APPROVE ? STATUS.APPROVED : STATUS.DECLINED, decided_at: new Date(now).toISOString(), decided_by: human.sub };
-  const consumed = await store.transitionRequest(request.request_id, STATUS.PENDING, update);
-  if (!consumed) fail("replayed_request", "access request has already been consumed", 409);
   if (decision === DECISION.DECLINE) return { request_id: request.request_id, status: STATUS.DECLINED };
   const id = grantId ? opaqueId(() => grantId) : opaqueId();
-  const grant = Object.freeze({ schema: SCHEMA.GRANT, grant_id: id, subject_id: request.actor_id, parent_id: request.parent_id, resource: request.resource, actions: request.actions, environment: request.environment, expires_at: request.expires_at, issued_at: new Date(now).toISOString(), issued_by: human.sub, request_id: request.request_id });
+  const grant = Object.freeze({ schema: SCHEMA.GRANT, grant_id: id, subject_id: request.actor_id, parent_id: request.parent_id, workspace: request.workspace, resource: request.resource, actions: request.actions, environment: request.environment, expires_at: request.expires_at, issued_at: new Date(now).toISOString(), issued_by: human.sub, request_id: request.request_id });
+  if (typeof store.approveRequestWithGrant === "function") {
+    const consumed = await store.approveRequestWithGrant(request, grant);
+    if (!consumed) fail("replayed_request", "access request has already been consumed", 409);
+    return grant;
+  }
   requireMethod(store, "createGrant");
+  const update = { status: STATUS.APPROVED, decided_at: new Date(now).toISOString(), decided_by: human.sub };
+  const consumed = await store.transitionRequest(request.request_id, STATUS.PENDING, update);
+  if (!consumed) fail("replayed_request", "access request has already been consumed", 409);
   await store.createGrant(grant);
   return grant;
 }
 
-export async function getGrant({ grantId, subject, store, now = new Date() } = {}) {
+export async function getGrant({ grantId, subject, store, policy, now = new Date() } = {}) {
   const agent = assertLiveSubject(subject, now);
   if (agent.kind !== SUBJECT_KIND.AGENT) fail("agent_required", "only an agent may retrieve its grant", 403);
   requireMethod(store, "getGrant");
   const grant = await store.getGrant(text(grantId, "grant_id"));
   if (!grant || grant.subject_id !== agent.sub) fail("not_found", "grant not found", 404);
+  enforcePolicy(grant, policy);
+  if (policy?.requireRevocation) {
+    requireMethod(store, "isRevoked");
+    if (await store.isRevoked(grant.grant_id)) fail("grant_revoked", "grant has been revoked", 403);
+  }
   if (Date.parse(grant.expires_at) <= now.getTime()) fail("scope_expired", "grant has expired", 403);
   return grant;
 }
@@ -311,18 +378,26 @@ export async function handleRequest(request, env = {}) {
   try {
     const url = new URL(request.url);
     const parts = pathParts(request.url);
+    if (request.method === "GET" && url.pathname === "/healthz") return json({ status: "ok" });
+    if (request.method === "GET" && url.pathname === "/readyz") {
+      const store = storeForEnv(env);
+      if (typeof store.checkReadiness !== "function" || !(await store.checkReadiness())) fail("not_ready", "authorization storage is not ready");
+      return json({ status: "ready" });
+    }
     if (request.method === "POST" && url.pathname === "/api/v1/access-requests") {
       const subject = await authenticate(request, env, SUBJECT_KIND.AGENT);
       const body = await parseBody(request);
       if (!body.idempotency_key) body.idempotency_key = request.headers.get("idempotency-key") || undefined;
-      return json(await requestAccess({ subject, request: body, store: env.STORE }));
+      return json(await requestAccess({ subject, request: body, policy: runtimePolicy(env), store: storeForEnv(env) }));
     }
     if (parts[0] === "ask" && parts.length === 2 && (request.method === "GET" || request.method === "POST")) {
       const subject = await authenticate(request, env, SUBJECT_KIND.HUMAN);
       const requestId = parts[1];
-      if (request.method === "GET") return json({ approval_required: true, request: await readAccessRequest({ requestId, subject, store: env.STORE }) });
+      const policy = runtimePolicy(env);
+      const store = storeForEnv(env);
+      if (request.method === "GET") return json({ approval_required: true, request: await readAccessRequest({ requestId, subject, policy, store }) });
       const body = await parseBody(request);
-      return json(await approveAccessRequest({ requestId, subject, decision: body.decision, store: env.STORE }));
+      return json(await approveAccessRequest({ requestId, subject, decision: body.decision, policy, store }));
     }
     if (request.method === "POST" && url.pathname === "/mcp") return handleMcp(request, env);
     if (request.method === "GET" && env.ASSETS && typeof env.ASSETS.fetch === "function") return env.ASSETS.fetch(request);
@@ -339,30 +414,30 @@ export async function handleMcp(request, env = {}) {
       if (typeof env.AUTHORIZE_RECOVERY !== "function") fail("authorization_unavailable", "recovery authorization is unavailable");
       authorizer = verifiedClaim(await env.AUTHORIZE_RECOVERY(request, subject), env, SUBJECT_KIND.HUMAN);
     }
-    const result = await dispatchMcp(body, { subject, authorizer, store: env.STORE, env });
+    const result = await dispatchMcp(body, { subject, authorizer, policy: runtimePolicy(env), store: storeForEnv(env), env });
     return json({ jsonrpc: "2.0", id: body.id ?? null, result });
   } catch (error) { return json({ jsonrpc: "2.0", id: null, error: { code: error instanceof FailClosedError ? error.code : "service_unavailable" } }, error instanceof FailClosedError ? error.status : 503); }
 }
 
-export async function dispatchMcp(message, { subject, authorizer, store, env = {} } = {}) {
+export async function dispatchMcp(message, { subject, authorizer, policy, store, env = {} } = {}) {
   if (!message || message.jsonrpc !== "2.0" || typeof message.method !== "string") fail("invalid_mcp_request", "invalid MCP request", 400);
   const params = message.params || {};
   switch (message.method) {
-    case MCP_METHOD.REGISTER_AGENT: return registerAgent({ subject, publicKey: params.public_key, store });
-    case MCP_METHOD.REQUEST_ACCESS: return requestAccess({ subject, request: params, store });
-    case MCP_METHOD.GET_GRANT: return getGrant({ subject, grantId: params.grant_id, store });
+    case MCP_METHOD.REGISTER_AGENT: return registerAgent({ subject, publicKey: params.public_key, policy, store });
+    case MCP_METHOD.REQUEST_ACCESS: return requestAccess({ subject, request: params, policy, store });
+    case MCP_METHOD.GET_GRANT: return getGrant({ subject, grantId: params.grant_id, policy, store });
     case MCP_METHOD.BACKUP_IDENTITY: return backupIdentity({ subject, envelope: params.envelope, store });
     case MCP_METHOD.RESTORE_IDENTITY: return restoreIdentity({ subject, backupId: params.backup_id, proof: params.proof, authorizer, store, verifyProof: env.verifyProof });
     default: fail("method_not_found", "MCP method not found", 404);
   }
 }
 
-export async function registerAgent({ subject, publicKey, store, now = new Date() } = {}) {
+export async function registerAgent({ subject, publicKey, store, policy, now = new Date() } = {}) {
   const agent = assertLiveSubject(subject, now);
   if (agent.kind !== SUBJECT_KIND.AGENT) fail("agent_required", "only an agent may register", 403);
   const key = text(publicKey, "public_key");
   requireMethod(store, "registerAgent");
-  await store.registerAgent({ subject_id: agent.sub, parent_id: agent.parent_id, public_key: key, registered_at: new Date(now).toISOString() });
+  await store.registerAgent({ subject_id: agent.sub, parent_id: agent.parent_id, workspace: policy?.workspace, environment: policy?.environment || agent.environment, public_key: key, registered_at: new Date(now).toISOString() });
   return { subject_id: agent.sub, registered: true };
 }
 
