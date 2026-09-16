@@ -6,6 +6,8 @@ export const AUTH_LIMITS = Object.freeze({
   JWKS_CACHE_MS: 5 * 60 * 1000,
 });
 
+export const ACCESS_DEFAULT_AUDIENCE = "id-worker";
+
 const jwksCache = new Map();
 
 function reject(code, message = code, status = 401) {
@@ -36,6 +38,24 @@ function audiences(value) {
   reject("invalid_token", "aud claim is invalid");
 }
 
+export function normalizeAccessTeamDomain(value) {
+  if (typeof value !== "string" || value.trim().length === 0) reject("authentication_unavailable", "Access team domain is not configured", 503);
+  const raw = value.trim().replace(/\/+$/, "");
+  let parsed;
+  try { parsed = new URL(raw.includes("://") ? raw : `https://${raw}`); } catch { reject("authentication_unavailable", "Access team domain is invalid", 503); }
+  if (parsed.protocol !== "https:" || parsed.username || parsed.password || parsed.port || parsed.pathname !== "/" || parsed.search || parsed.hash || !parsed.hostname || parsed.hostname.includes("." ) === false) reject("authentication_unavailable", "Access team domain is invalid", 503);
+  return parsed.hostname.toLowerCase();
+}
+
+export function resolveAccessConfig(env = {}) {
+  const teamDomain = env.ACCESS_TEAM_DOMAIN && normalizeAccessTeamDomain(env.ACCESS_TEAM_DOMAIN);
+  const issuer = typeof env.ACCESS_ISSUER === "string" && env.ACCESS_ISSUER.length > 0 ? env.ACCESS_ISSUER : teamDomain ? `https://${teamDomain}` : undefined;
+  const jwks = typeof env.ACCESS_JWKS_URL === "string" && env.ACCESS_JWKS_URL.length > 0 ? env.ACCESS_JWKS_URL : teamDomain ? `https://${teamDomain}/cdn-cgi/access/certs` : undefined;
+  if (!issuer) reject("authentication_unavailable", "Access issuer is not configured", 503);
+  if (!jwks) reject("authentication_unavailable", "Access JWKS URL is not configured", 503);
+  return { issuer, jwks, audience: typeof env.ACCESS_AUDIENCE === "string" && env.ACCESS_AUDIENCE.length > 0 ? [env.ACCESS_AUDIENCE] : Array.isArray(env.ACCESS_AUDIENCE) && env.ACCESS_AUDIENCE.length > 0 ? env.ACCESS_AUDIENCE : [ACCESS_DEFAULT_AUDIENCE] };
+}
+
 function scopes(payload, kind, env) {
   const value = payload.scopes ?? payload.scope;
   if (Array.isArray(value) && value.every((item) => typeof item === "string" && item.length > 0)) return [...new Set(value)];
@@ -50,19 +70,21 @@ function expectedAudience(env) {
   const value = env.ACCESS_AUDIENCE || env.AUDIENCE;
   if (typeof value === "string" && value.length > 0) return [value];
   if (Array.isArray(value) && value.length > 0) return value;
-  reject("authentication_unavailable", "Access audience is not configured", 503);
+  return [ACCESS_DEFAULT_AUDIENCE];
 }
 
 function expectedIssuer(env) {
   const value = env.ACCESS_ISSUER;
-  if (typeof value !== "string" || value.length === 0) reject("authentication_unavailable", "Access issuer is not configured", 503);
-  return value;
+  if (typeof value === "string" && value.length > 0) return value;
+  return resolveAccessConfig(env).issuer;
 }
 
 function jwksUrl(env) {
   const value = env.ACCESS_JWKS_URL;
-  if (typeof value !== "string" || value.length === 0) reject("authentication_unavailable", "Access JWKS URL is not configured", 503);
-  try { return new URL(value).toString(); } catch { reject("authentication_unavailable", "Access JWKS URL is invalid", 503); }
+  if (typeof value === "string" && value.length > 0) {
+    try { return new URL(value).toString(); } catch { reject("authentication_unavailable", "Access JWKS URL is invalid", 503); }
+  }
+  return new URL(resolveAccessConfig(env).jwks).toString();
 }
 
 async function loadJwks(url, fetcher, forceRefresh = false) {
