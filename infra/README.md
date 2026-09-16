@@ -27,6 +27,12 @@ production database. Hostnames are intended routes; creating DNS records and rou
 operator with authority over the `drksci.com` zone. The renderer requires a distinct UUID-shaped ID
 for each environment and fails closed when one is absent or malformed.
 
+The deployment also sets an explicit policy identity in every environment. Production uses
+`WORKSPACE=workspace://drksci/id/prod`; development, test, and preview use the corresponding
+`workspace://drksci/id/<environment>` URI. `RESOURCE=github:drksci/id` identifies the verified
+repository in every environment. Tokens and policy checks must carry matching workspace, resource,
+and environment values; a hostname is only a selector.
+
 ## Workspace hostnames
 
 The canonical nested form is `<child>.<parent>.id.drksci.com`; for example,
@@ -67,10 +73,14 @@ verified bindings before provisioning any wildcard.
    `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`, `VAPID_SUBJECT`, `GITHUB_APP_ID`,
    `GITHUB_APP_PRIVATE_KEY`, and `GITHUB_WEBHOOK_SECRET`. The App private key and webhook secret
    are separate values and must be rotated independently.
-5. Apply D1 migrations from the worker implementation before the first deployment. When the
+5. Provision the deployment-owned Access configuration for each Worker environment using the
+   names `ACCESS_ISSUER`, `ACCESS_JWKS_URL`, `ACCESS_AUDIENCE`, `ACCESS_AGENT_SCOPES`, and
+   `ACCESS_HUMAN_SCOPES`. Keep the values in the deployment secret/config store and out of this
+   repository; the checked-in config intentionally contains names and no Access values.
+6. Apply D1 migrations from the worker implementation before the first deployment. When the
    implementation introduces migrations, add its migrations directory to this config and verify
    the migration list against the target database; retain the output as release evidence.
-6. Configure Access, WAF, rate limiting, and the GitHub App webhook using
+7. Configure Access, WAF, rate limiting, and the GitHub App webhook using
    [`cloudflare/security-checklist.md`](cloudflare/security-checklist.md) and
    [`github-app.example.yml`](github-app.example.yml).
 
